@@ -1,0 +1,47 @@
+{
+  "name": "qqharnessbot",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "description": "基于 DeepSeek Harness 的 QQ AI 伙伴，支持角色卡、会话记忆、主动互动与日常工具。",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/bridge.js",
+    "postinstall": "node scripts/patch-snowluma-sdk.mjs",
+    "setup:dsh": "node --env-file-if-exists=.env scripts/setup-dsh.mjs",
+    "test": "node scripts/test-owner-tools-suite.mjs && node --test scripts/test-qq-preset-contract.mjs scripts/test-agent-preset-patches.mjs scripts/test-setup-dsh-idempotent.mjs scripts/test-release-check.mjs",
+    "test:owner-tools-suite": "node scripts/test-owner-tools-suite.mjs",
+    "test:companion": "node --test scripts/test-life-services.mjs scripts/test-companion-dates.mjs scripts/test-companion.mjs scripts/test-companion-bridge.mjs scripts/test-request-continuity.mjs",
+    "test:utilities": "node --test scripts/test-utility-foundation.mjs scripts/test-utility-weather-library.mjs scripts/test-utility-owner-attachments.mjs scripts/test-utility-news-scheduler.mjs scripts/test-utility-bridge.mjs",
+    "check:release": "node scripts/release-check.mjs",
+    "check:staged": "node scripts/release-check.mjs --staged",
+    "check:history": "node scripts/release-check.mjs --history",
+    "hooks:install": "git config core.hooksPath .githooks"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-host-apiproxy": "0.1.1-rc.2",
+    "@deepseek-ai/schemastery": "^3.18.1",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@snowluma/sdk": "^1.14.20",
+    "iconv-lite": "0.6.3",
+    "js-yaml": "^4.3.2",
+    "mammoth": "1.13.0",
+    "pdf-parse": "1.1.1",
+    "pdfkit": "^0.20.2",
+    "silk-wasm": "^3.7.1",
+    "ws": "^8.22.0",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
+    "zod": "^4.4.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YZzy2006/QQHarnessBot.git"
+  },
+  "homepage": "https://github.com/YZzy2006/QQHarnessBot",
+  "bugs": {
+    "url": "https://github.com/YZzy2006/QQHarnessBot/issues"
+  }
+}

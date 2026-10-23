@@ -1,0 +1,7 @@
+title = "QQHarnessBot 密钥检测"
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "只排除不进入发布提交的依赖和Git元数据"
+paths = ['''(?:^|[\\/])(?:node_modules|\.git|\.release-evidence)[\\/]''']
