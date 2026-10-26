@@ -19,6 +19,7 @@
     "docs/OWNER-TOOLS-USAGE.md",
     "docs/REQUEST-CONTINUITY.md",
     "docs/UTILITIES-USAGE.md",
+    "docs/assets/hero.svg",
     "dsh/agent-presets/qq-chat-v2/agent.cordis.yml",
     "dsh/agent-presets/qq-chat-v2/preset.yml",
     "dsh/agent-presets/qq-chat-v2/qq-tool-restrict.mjs",
