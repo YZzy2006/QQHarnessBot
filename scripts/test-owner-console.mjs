@@ -23,9 +23,9 @@ test('解析：状态/会话/群/成员/错误/提醒/帮助', () => {
   assert.equal(parseOwnerConsoleCommand('[运行状态]').action, 'status');
   assert.equal(parseOwnerConsoleCommand('[会话列表]').action, 'conversations');
   assert.equal(parseOwnerConsoleCommand('[群列表]').action, 'groups');
-  const members = parseOwnerConsoleCommand('[群成员 7000001]');
+  const members = parseOwnerConsoleCommand('[群成员 200000001]');
   assert.equal(members.action, 'groupMembers');
-  assert.equal(members.groupId, 7000001);
+  assert.equal(members.groupId, 200000001);
   assert.equal(parseOwnerConsoleCommand('[群成员]').action, 'groupMembers');
   assert.equal(parseOwnerConsoleCommand('[群成员]').groupId, 0);
   assert.equal(parseOwnerConsoleCommand('[最近错误]').action, 'errors');
@@ -48,7 +48,7 @@ test('状态格式化', () => {
   const text = formatStatus({
     mode: 'reserved2',
     uptimeMs: 2 * 86400 * 1000 + 3 * 3600 * 1000,
-    selfUin: 2867977191,
+    selfUin: 100000004,
     selfNickname: '樱良',
     accountOnline: true,
     qzone: { enabled: true, autoPublish: true, nextAutoCheckAt: Date.parse('2026-10-20T08:00:00+08:00'), postToday: 1, postMax: 1, imageToday: 1, imageMax: 1 },
@@ -59,27 +59,27 @@ test('状态格式化', () => {
   });
   assert.match(text, /【机器人状态】/);
   assert.match(text, /模式：reserved2｜运行：2天3小时/);
-  assert.match(text, /樱良\(2867977191\)｜在线/);
+  assert.match(text, /樱良\(100000004\)｜在线/);
   assert.match(text, /今日额度：发帖 1\/1/);
   assert.match(text, /待处理评论：2 条/);
 });
 
 test('会话/群/成员/错误/提醒格式化', () => {
   const conv = formatConversations([
-    { key: 'private:7770486', unread: 2, recent: 100, lastIncomingAt: Date.parse('2026-10-20T00:12:00+08:00'), lastAiReplyAt: Date.parse('2026-10-20T00:13:00+08:00') }
+    { key: 'private:100000001', unread: 2, recent: 100, lastIncomingAt: Date.parse('2026-10-20T00:12:00+08:00'), lastAiReplyAt: Date.parse('2026-10-20T00:13:00+08:00') }
   ]);
   assert.match(conv, /【会话列表】1 个/);
-  assert.match(conv, /private:7770486（私聊）未读 2/);
-  const groups = formatGroups([{ group_id: 7000001, group_name: '樱良、那年夏末、示例昵称、', member_count: 4 }]);
+  assert.match(conv, /private:100000001（私聊）未读 2/);
+  const groups = formatGroups([{ group_id: 200000001, group_name: '樱良、那年夏末、YNA、', member_count: 4 }]);
   assert.match(groups, /【群列表】1 个/);
-  assert.match(groups, /樱良、那年夏末、示例昵称、\(7000001\)  4 人/);
-  const members = formatGroupMembers(7000001, [{ user_id: 7770486, card: '示例好友甲', nickname: '示例好友甲' }]);
-  assert.match(members, /【群成员】7000001｜1 人/);
-  assert.match(members, /示例好友甲\(7770486\)/);
+  assert.match(groups, /樱良、那年夏末、YNA、\(200000001\)  4 人/);
+  const members = formatGroupMembers(200000001, [{ user_id: 100000001, card: '测试联系人', nickname: '测试联系人' }]);
+  assert.match(members, /【群成员】200000001｜1 人/);
+  assert.match(members, /测试联系人\(100000001\)/);
   const errors = formatRecentErrors([{ label: '空间互动', at: Date.parse('2026-10-19T22:45:00+08:00'), text: 'comment: timeout' }]);
   assert.match(errors, /【最近错误】/);
   assert.match(errors, /空间互动.*comment: timeout/);
-  const rem = formatReminders([{ id: 'r_12345678', at: Date.parse('2026-10-20T09:00:00+08:00'), key: 'private:7770486', text: '出门走走', repeat: null }]);
+  const rem = formatReminders([{ id: 'r_12345678', at: Date.parse('2026-10-20T09:00:00+08:00'), key: 'private:100000001', text: '出门走走', repeat: null }]);
   assert.match(rem, /【提醒列表】1 条/);
   assert.match(rem, /r_12345678/);
   assert.match(rem, /出门走走/);
@@ -90,7 +90,7 @@ test('会话/群/成员/错误/提醒格式化', () => {
 });
 
 test('帮助文案包含全部控制台指令', () => {
-  for (const s of ['[状态]', '[会话列表]', '[群列表]', '[群成员 7000001]', '[最近错误]', '[余额]', '[提醒列表]', '[取消提醒 r_xxxxxxxx]']) {
+  for (const s of ['[状态]', '[会话列表]', '[群列表]', '[群成员 200000001]', '[最近错误]', '[余额]', '[提醒列表]', '[取消提醒 r_xxxxxxxx]']) {
     assert.ok(CONSOLE_HELP.includes(s), s);
   }
 });

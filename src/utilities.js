@@ -7,6 +7,10 @@ import {createUtilityOwner} from './utility-owner.js';
 import {createUtilityAttachments} from './utility-attachments.js';
 import {bjDate,bjClock} from './life-services.js';
 import {createLocalRequestQueue} from './local-request-queue.js';
+import {createPracticalTools,PRACTICAL_COMMANDS,PRACTICAL_HELP} from './practical-tools.js';
+import {createMediaExperience,MEDIA_COMMANDS,MEDIA_HELP} from './media-experience.js';
+import {createExperienceDialogue} from './experience-dialogue.js';
+import {BILIBILI_HELP} from './bilibili-controller.js';
 export const UTILITIES_HELP=[
   '【扩展功能】群查询回复本群；私人内容只发本人。订阅默认关闭。',
   '[我的城市][广州] / [我的设置] / [查询偏好][简洁] / [我的安静时段][22-8]',
@@ -23,19 +27,52 @@ export const UTILITIES_HELP=[
   '[推荐歌曲或推荐电影][标题][链接][理由] / [歌单或片单][关键词] / [评价推荐][s_ID][评价]',
   '[抽一首歌] / [抽一部电影]；作者/管理员可[删除推荐][s_ID][确认]',
   '[兴趣主题][Java,AI] / [兴趣简报][主题（可选）] / [简报订阅][08:30或关闭]',
-  '所有完整ID以实际返回为准；删除/发布/截图保存必须明确确认。'
+  '所有完整ID以实际返回为准；删除/发布/截图保存必须明确确认。',PRACTICAL_HELP,MEDIA_HELP,
+  '可直接说“把这张截图整理成Excel”“确认导出”“看看我的日历”；[结果卡片]/[结果原文]查看本人本会话最近工具结果。',
+  BILIBILI_HELP
 ].join('\n');
 export function createUtilities(input) {
   const known=new Set(['天气','天气查询','我的城市','我的设置','查询偏好','我的安静时段','扩展帮助','群知识投稿','群知识审核','群知识待审','群知识','群知识详情','群知识过期','删除群知识','推荐歌曲','推荐电影','歌单','片单','评价推荐','删除推荐','抽一首歌','抽一部电影','今日安排','本周回忆','记录报错','查报错','报错详情','删除报错','报错验证','生成公告','公告预览','发布公告','删除公告','截图待办','确认截图待办','我的待办','完成截图待办','删除截图待办','文件暂存','文件对比','清除文件暂存','兴趣主题','兴趣简报','今日安排订阅','周记订阅','简报订阅']);
   const now=input.now||Date.now,store=input.store||createUtilityStore(input),queue=createLocalRequestQueue({now}),pendingWeather=new Map();
+  for(const name of PRACTICAL_COMMANDS)known.add(name);
+  for(const name of [...MEDIA_COMMANDS,'结果卡片','结果原文'])known.add(name);
+  const dialogue=createExperienceDialogue({now}),results=new Map(),resultActor=ctx=>JSON.stringify([ctx.sourceKey,String(ctx.userId)]);
+  const safeResult=text=>/^【(?:视频理解|文件问答|截图表格预览|日历导入预览|已结束日历清理预览|我的日历|我的日历批次|我的订阅|今日安排|天气|文件对比|兴趣简报|群摘要)/.test(text);
+  function rememberResult(ctx,value){
+    if(input.isEnabled?.()===false||!input.isAllowed(ctx.sourceKey)||!/^[1-9]\d{0,11}$/.test(String(ctx.userId)))return false;
+    const text=input.redact(String(value));input.checkResultText?.(ctx.sourceKey,text);
+    if(/【(?:本周回忆|私人周记|管理员周记)/.test(text)||!safeResult(text))return false;
+    for(const [key,row] of results)if(now()-row.at>900000)results.delete(key);
+    if(results.size>=100&&!results.has(resultActor(ctx)))results.delete(results.keys().next().value);
+    results.set(resultActor(ctx),{text:text.slice(0,12000),partial:text.length>12000,at:now()});return true;
+  }
   const send=input.send||((key,text,options)=>input.say({sourceKey:key},text,options));
-  const d={...input,store,now,say:async(ctx,text,options={})=>{
+  const d={...input,store,now,send,rememberResult,say:async(ctx,text,options={})=>{
     if(!input.isAllowed(ctx.sourceKey))throw Error('目标不在当前模式白名单内');
-    if(await send(ctx.sourceKey,input.redact(String(text)),{manual:true,noMemory:true,...options})===false)throw Error('回复未确认送达，请稍后重试');
+    text=input.redact(String(text));input.checkResultText?.(ctx.sourceKey,text);
+    const privateReport=options.privateReport||/【(?:本周回忆|私人周记|管理员周记)/.test(text);
+    if(privateReport&&options.card)throw Error('私人周记不进入新卡片或媒体上下文');
+    const cacheable=!privateReport&&safeResult(text)&&/^[1-9]\d{0,11}$/.test(String(ctx.userId));
+    if(cacheable&&options.cache!==false)rememberResult(ctx,text);
+    let cards=null;
+    if(!privateReport&&!options.plain&&(options.card||ctx.resultCards&&cacheable&&text.length>80)&&input.renderCard&&input.sendImage){
+      try{cards=await input.renderCard(text);}catch{input.audit?.('[cards] 渲染不可用，已保留文字结果');}
+    }
+    if(cards?.length){
+      for(const card of cards){
+        const guard=()=>input.isEnabled?.()!==false&&input.isAllowed(ctx.sourceKey);
+        if(!guard())throw Error('卡片发送权限已变化');
+        try{if(await input.sendImage(ctx.sourceKey,card.buffer,guard)===false)throw Error('unknown');}
+        catch{throw Error('卡片发送回执不明，不自动重发；可发送“结果原文”取回文字。');}
+      }
+    }else if(await send(ctx.sourceKey,text,{manual:true,...options,noMemory:true})===false)throw Error('回复未确认送达，请稍后重试');
+    if(!privateReport&&options.observe!==false)dialogue.observe(ctx,text);
     return true;
   }};
   d.quote=async ctx=>{if(!ctx.quotedId)throw Error('请先引用当前会话的原消息');return checkedQuote(ctx,await input.getMessage(ctx.quotedId));};
   const weather=createUtilityWeather(d),library=createUtilityLibrary(d),owner=createUtilityOwner(d),attachments=createUtilityAttachments(d);
+  const practical=createPracticalTools(d,{attachments});
+  const media=createMediaExperience(d);
   const enabled=()=>input.isEnabled?.()!==false;
   async function news(uid,topic) {
     const topics=topic?[topic]:store.profile(uid).topics;
@@ -49,16 +86,23 @@ export function createUtilities(input) {
   }
   async function handle(ctx,inputText) {
     if(!enabled()||!input.isAllowed(ctx.sourceKey)||!/^[1-9]\d{0,11}$/.test(String(ctx.userId)))return false;
-    const cmd=parseCompanionCommand(inputText),actor=ctx.sourceKey+':'+ctx.userId;
+    if(input.bilibili&&await input.bilibili.handle(ctx,inputText))return true;
+    let cmd=parseCompanionCommand(inputText),mapped=null;const actor=ctx.sourceKey+':'+ctx.userId;
+    if((['停止媒体处理','清除媒体上下文'].includes(cmd?.command)||/^(?:停止视频分析|停止改图|取消本次媒体处理|取消这次操作)$/.test(String(inputText)))&&media.isBusy(ctx))return media.handle(ctx,{command:cmd?.command==='清除媒体上下文'?'清除媒体上下文':'停止媒体处理',args:[]});
     const weatherCommand=['天气','天气查询'].includes(cmd?.command);
     const followup=weather.isFollowup(inputText)&&(weather.context(ctx)||pendingWeather.has(actor));
-    if(!known.has(cmd?.command)&&!followup)return false;
+    if(!known.has(cmd?.command)&&!followup){
+      try{mapped=dialogue.resolve(ctx,inputText,media.context(ctx));}catch(e){await d.say(ctx,'未完成：'+input.redact(e.message));return true;}
+      if(!mapped)return false;
+      if(!mapped.reply)cmd=mapped;
+    }
     if(weatherCommand)pendingWeather.set(actor,(pendingWeather.get(actor)||0)+1);
     try {
       return await queue.run(actor,async()=>{
         if(!input.isAllowed(ctx.sourceKey))return true;
         if(!enabled()){await d.say(ctx,'这条排队请求尚未执行：扩展功能已关闭。');return true;}
-        const handled=await execute(ctx,inputText);
+        if(mapped?.reply){await d.say(ctx,mapped.reply);return true;}
+        const handled=await execute({...ctx,resultCards:!!mapped},inputText,cmd);
         if(!handled&&followup){await d.say(ctx,'上一条天气查询没有留下可用结果，请补充城市后再查。');return true;}
         return handled;
       },{onQueued:()=>d.say(ctx,'上一条请求还在处理，这条已排队；轮到后直接给结果，等待超过2分钟将不再执行。')});
@@ -69,11 +113,23 @@ export function createUtilities(input) {
       if(weatherCommand){const n=pendingWeather.get(actor)-1;if(n)pendingWeather.set(actor,n);else pendingWeather.delete(actor);}
     }
   }
-  async function execute(ctx,inputText) {
-    const cmd=parseCompanionCommand(inputText),c=cmd?.command,a=cmd?.args||[];
+  async function execute(ctx,inputText,override) {
+    const cmd=override||parseCompanionCommand(inputText),c=cmd?.command,a=cmd?.args||[];
     try {
       if(c==='扩展帮助'){await d.say(ctx,UTILITIES_HELP);return true;}
-      if(await weather.handle(ctx,cmd,inputText)||await library.handle(ctx,cmd)||await owner.handle(ctx,cmd)||await attachments.handle(ctx,cmd))return true;
+      if(c==='结果卡片'||c==='结果原文'){
+        if(a.length)throw Error('结果卡片/结果原文无需参数，可引用目标原消息');
+        const remembered=results.get(resultActor(ctx));
+        let text=remembered&&now()-remembered.at<=900000?remembered.text+(remembered.partial?'\n\n缓存超过12000字符，以上仅为保留范围，不是完整原文。':''):null;
+        if(ctx.quotedId){const q=await d.quote(ctx),raw=q.message.filter(v=>v.type==='text').map(v=>String(v.data?.text||'')).join('\n');text=raw.slice(0,12000)+(raw.length>12000?'\n\n引用超过12000字符，以上仅为保留范围，不是完整原文。':'');}
+        if(!text)throw Error('没有你在本会话的有效工具结果，请先查询或引用原消息');
+        await d.say(ctx,text,{card:c==='结果卡片',plain:c==='结果原文',cache:false,observe:false});return true;
+      }
+      if(await media.handle(ctx,cmd))return true;
+      if(await weather.handle(ctx,cmd,inputText)||await library.handle(ctx,cmd)||await owner.handle(ctx,cmd)||await attachments.handle(ctx,cmd)||await practical.handle(ctx,cmd)){
+        if(['导出表格','确认日历导入','清理已结束日历'].includes(c)&&a.length===2&&a[1]==='确认')dialogue.consume(ctx,a[0]);
+        return true;
+      }
       if(c==='兴趣主题') {
         const topics=String(a[0]||'').split(/[,，、]/).map(v=>utilityText(v,21)).filter(Boolean);
         if(a.length!==1||!topics.length||topics.length>5||topics.some(v=>v.length>20))throw Error('[兴趣主题][Java,AI,游戏]；最多5个，每个20字以内');
@@ -101,6 +157,8 @@ export function createUtilities(input) {
   }
   let ticking=false;
   async function tick() {
+    media.tick();
+    try{input.bilibili?.prune?.();}catch{input.audit?.('[bilibili] 视频保留检查未完成，停止隐式重复读取并等待维护');}
     if(ticking||!enabled())return;ticking=true;
     try {
       for(const [uid,p] of Object.entries(store.read().profiles)) {
@@ -131,8 +189,10 @@ export function createUtilities(input) {
           else store.editProfile(uid,v=>{const row=v.todos.find(r=>r.id===t.id);if(row&&!row.done)row.retryAt=now()+120000;});
         }
       }
+      await practical.tick();
+      await input.bilibili?.tick();
     } catch {input.audit?.('[utilities] 调度或存储检查未完成，将在下次检查重试');}
     finally {ticking=false;}
   }
-  return {handle,tick,store,weather,owner,weatherPending:ctx=>pendingWeather.has(ctx.sourceKey+':'+ctx.userId)};
+  return {handle,tick,store,weather,owner,practical,media,weatherPending:ctx=>pendingWeather.has(ctx.sourceKey+':'+ctx.userId)};
 }

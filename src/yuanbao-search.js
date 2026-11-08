@@ -1,13 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import {fileURLToPath} from 'node:url';
 import {isIP} from 'node:net';
 import {safePublicLink} from './utility-content.js';
 import {isPrivateIp} from './safe-fetch.js';
 import {sanitizeUntrusted} from './untrusted.js';
 
 // Official API-key endpoint: https://cloud.tencent.com/document/product/1806/130615
-export function createYuanbaoSearch({env=process.env,stateDir=fileURLToPath(new URL('../state/',import.meta.url)),fetchImpl=fetch,readKey}={}) {
+export function createYuanbaoSearch({env=process.env,stateDir='/opt/QQHarnessBot/state',fetchImpl=fetch,readKey}={}) {
   function loadKey() {
     if(String(env.YUANBAO_SEARCH_API_KEY||'').trim())return String(env.YUANBAO_SEARCH_API_KEY).trim();
     try{return String(readKey?readKey('.yuanbao-search-key'):fs.readFileSync(path.join(stateDir,'.yuanbao-search-key'),'utf8')).trim();}catch{return '';}

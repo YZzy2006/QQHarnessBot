@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import {fileURLToPath} from 'node:url';
 import {safePublicLink} from './utility-content.js';
 import {createYuanbaoSearch} from './yuanbao-search.js';
 export function normalizeNews(items,now=Date.now()) {
@@ -17,7 +16,7 @@ export function normalizeNews(items,now=Date.now()) {
   }
   return out;
 }
-export function createNewsSearch({env=process.env,stateDir=fileURLToPath(new URL('../state/',import.meta.url)),fetchImpl=fetch,readKey,now=Date.now}={}) {
+export function createNewsSearch({env=process.env,stateDir='/opt/QQHarnessBot/state',fetchImpl=fetch,readKey,now=Date.now}={}) {
   const yuanbao=createYuanbaoSearch({env,stateDir,fetchImpl,readKey});
   const key=(name,file)=>{if(env[name])return String(env[name]).trim();try{return readKey?readKey(file):fs.readFileSync(path.join(stateDir,file),'utf8').trim();}catch{return '';}};
   async function request(url,body,token) {

@@ -1,0 +1,27 @@
+# Replace domain, site root and certificate paths with your own values.
+server {
+    listen 443 ssl;
+    server_name workbench.example.com;
+    root /var/www/qq-workbench;
+    index workbench.html;
+    ssl_certificate /etc/letsencrypt/live/workbench.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/workbench.example.com/privkey.pem;
+    add_header X-Content-Type-Options nosniff always;
+    client_max_body_size 3m;
+    location /api/workbench/ {
+        proxy_pass http://127.0.0.1:3188;
+        proxy_set_header Host 127.0.0.1:3188;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 90s;
+        proxy_no_cache 1;
+        proxy_cache_bypass 1;
+    }
+    location / { try_files $uri $uri/ =404; }
+}
+server {
+    listen 80;
+    server_name workbench.example.com;
+    return 301 https://$host$request_uri;
+}

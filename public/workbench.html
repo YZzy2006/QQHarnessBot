@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>樱良 · 工作台</title><link rel="stylesheet" href="/workbench.css?v=20261108-size1"><script src="/workbench-controls.js" defer></script><script src="/workbench.js?v=20261108-size1" defer></script></head>
+<body>
+<div id="login-screen" class="login-screen">
+  <form id="login-form" class="login-panel">
+    <div class="brand-symbol" aria-hidden="true">樱</div><h1>樱良的工作台</h1><p class="muted">日常、回忆，还有正在做的事。</p>
+    <label>账号<span class="control"><input name="username" autocomplete="username" required maxlength="40" value="yingliang"></span></label>
+    <label>密码<span class="control"><input name="password" type="password" autocomplete="current-password" required maxlength="200"></span></label>
+    <button class="primary" type="submit">登录工作台</button><p id="login-error" class="error" role="alert"></p>
+    <p class="small muted">个人管理入口</p>
+  </form>
+</div>
+<div id="app" hidden>
+  <header class="topbar"><a class="brand" href="#profile" aria-label="樱良的工作台首页"><span class="brand-symbol" aria-hidden="true"></span><span><strong>樱良的工作台</strong><small>日常、回忆，还有正在做的事</small></span></a><div class="account-controls"><span class="account-label">个人管理</span><button id="logout" class="quiet">退出</button></div></header>
+  <div class="utility-bar"><section id="health" class="health-strip" aria-label="当前状态"></section><div id="preview-banner" class="notice" hidden>本地预览 · 示例资料，操作不影响 QQ</div></div>
+  <div class="navigation-bar"><nav id="nav" aria-label="工作台分类"></nav></div>
+  <main>
+    <div class="page-heading"><figure id="character-window" class="character-window" aria-label="樱良形象预留窗口"><div class="portrait-slot"><div id="character-placeholder" class="portrait-placeholder"><svg viewBox="0 0 24 32" shape-rendering="crispEdges" aria-hidden="true"><path d="M8 4h8v2h2v10h-2v2H8v-2H6V6h2zM6 22h12v2h2v6H4v-6h2z" fill="#b6b5a5"/></svg><span>形象待放入</span></div><img id="character-image" alt="樱良的头像或像素形象" width="64" height="80" hidden></div><figcaption>樱良</figcaption></figure><div><p class="greeting" id="date-label"></p><h1 id="page-title">她的日常</h1><p class="muted" id="page-description"></p></div><div class="scope-controls"><label>查看范围<span class="control"><select id="scope" aria-label="查看范围"><option value="all">全部活动</option></select></span></label><button id="refresh" class="quiet">刷新</button></div></div>
+    <div id="operation" class="notice" role="status" hidden></div>
+    <div id="page-error" class="error" role="alert" hidden></div>
+    <section id="content" aria-live="polite" aria-busy="false"></section>
+    <footer><span>樱良的工作台</span><span>每一条记录，都有它的来处。</span></footer>
+  </main>
+</div>
+<dialog id="confirm-dialog"><form method="dialog"><h2 id="confirm-title">确认操作</h2><p id="confirm-text"></p><div class="actions"><button value="cancel" class="quiet">取消</button><button id="confirm-yes" value="confirm" class="primary">确认执行</button></div></form></dialog>
+</body></html>

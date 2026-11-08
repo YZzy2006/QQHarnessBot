@@ -5,9 +5,10 @@
 //
 // 全量名称来自 `src/qq-face-data.js`（由 SnowLuma `fetch_sys_faces` 的 q_sid 生成，285 个数字 id）。
 // emoji 表情包的 q_sid 是 emoji 字符，实测 OneBot 报 retcode 1400，所以不收录。
-// 常用 id：doge/傲娇=179、捂脸=264、笑哭=182、吃瓜=271、赞=76、白眼=22、委屈=106、
-// 狗头/汪汪/ww=277、菜狗/菜汪=317、崇拜=318（后两个超级表情，带 large:true）。
-// 注意：QQ 目录里 179 的内部名叫 doge，但实际图案是“傲娇”脸；真正的狗头是 277 汪汪。
+// 常用 id：狗头/doge/狗头保命=277、傲娇=179、捂脸=264、笑哭=182、吃瓜=271、赞=76、
+// 白眼=22、委屈=106、菜狗/菜汪=317、崇拜=318（后两个超级表情，带 large:true）。
+// 注意：QQ 目录里 179 的内部名叫 doge，但图案是“傲娇”脸；日常说的 doge/狗头保命
+// 指的是 277 狗头，不是狗叫。发送与释义都以 277 为狗头，179 只用于明确的傲娇。
 import { QQ_FACE_DATA } from './qq-face-data.js';
 
 const face = (id) => Object.freeze({ id: String(id) });
@@ -22,7 +23,10 @@ function normalizeEntry(value) {
 // 手工别名：补目录里没有/叫法不同的常用名。
 const ALIASES = Object.freeze({
   '狗头': '277',
-  'doge': '179',
+  // doge 在 QQ 目录里的内部名是 179（傲娇脸），但日常语境说的 doge 就是狗头保命，
+  // 按用户实际用法指向 277；要发傲娇脸请显式写 [傲娇]。
+  'doge': '277',
+  '狗头保命': '277',
   '傲娇': '179',
   'ww': '277',
   'wwww': '277',
@@ -62,7 +66,8 @@ const PREFERRED_NAMES = Object.freeze({
   '76': '赞',
   '22': '白眼',
   '106': '委屈',
-  '277': '汪汪',
+  // 277 是狗头；「汪汪/ww」只是同一张脸的别名，展示时统一叫狗头，避免模型误读成狗叫。
+  '277': '狗头',
   '317': '菜狗',
   '318': '崇拜',
   '49': '拥抱'
@@ -82,9 +87,30 @@ export function faceNameOf(id) {
   return key ? (QQ_FACE_NAMES[key] || '') : '';
 }
 
+// 两张最容易混淆的脸单独写说明：入站时直接告诉模型「这是什么、别理解成什么」。
+// OneBot 的 face.summary 常常带上游的错误命名（277 被标成「傲娇」、179 被标成「狗头」），
+// 所以这里只认 id，不采信 summary。
+const FACE_TEXT_NOTES = Object.freeze({
+  '277': '[表情:狗头] 是玩笑/调侃/反讽用的狗头保命，常用标记 [doge]、[狗头]、[狗头保命] 都是它；不是狗叫，也不是傲娇。',
+  '179': '[表情:傲娇] 是傲娇脸，QQ 目录内部名doge，发出去长这样；它不是狗头，别当成狗头保命。'
+});
+
+/**
+ * 把收到的 face id 转成模型可读的说明。
+ * 常用表情返回「标记 + 一句话释义」，其余返回纯标记，未知 id 返回 [表情<id>]。
+ */
+export function faceTextOf(id) {
+  const key = String(id ?? '').trim();
+  if (!key) return '';
+  const note = FACE_TEXT_NOTES[key];
+  if (note) return note;
+  const name = faceNameOf(key);
+  return name ? `[表情:${name}]` : `[表情${key}]`;
+}
+
 // 提示词/帮助里展示的常用标记（只保留映射表里真实存在的）。
 const MARKER_CANDIDATES = [
-  '狗头', '汪汪', 'ww', '傲娇', 'doge', '菜狗', '崇拜', '捂脸', '笑哭', '吃瓜', '赞', '白眼',
+  '狗头', '狗头保命', 'doge', '汪汪', 'ww', '傲娇', '菜狗', '崇拜', '捂脸', '笑哭', '吃瓜', '赞', '白眼',
   '委屈', '调皮', '可爱', '流汗', '擦汗', '拥抱', '抱拳', '偷笑', '坏笑', '心碎',
   '可怜', '挥手', '卖萌', '得意', '憨笑', '惊讶', '疑问', '再见', '收到', '亲亲',
   '比心', '打call', '晚安', '开心', '无语', '厉害', '合十', '好的', '害羞', '色',
@@ -111,8 +137,12 @@ function markerName(raw) {
  * @param {{escapeText?: (s:string)=>string}} [options] 每个文本段的转义函数
  * @returns {Array<{type:string,data:object}>}
  */
+export function normalizeQQQuotes(value) {
+  return String(value ?? '').replace(/[「『]/g, '“').replace(/[」』]/g, '”');
+}
+
 export function buildFaceSegments(text, { escapeText = (s) => s } = {}) {
-  const raw = String(text ?? '');
+  const raw = normalizeQQQuotes(text);
   const out = [];
   let last = 0;
   MARKER_RE.lastIndex = 0;
@@ -152,8 +182,9 @@ export function hasFaceMarker(text) {
 export const AUTO_RULES = Object.freeze([
   { re: /(哈哈|笑死|笑哭|绷不住|太好笑|乐死|笑不活)/, marker: '笑哭' },
   { re: /(无语|服了|离谱|难绷|汗颜)/, marker: '捂脸' },
-  { re: /(狗头|狗狗)/, marker: '狗头' },
-  { re: /(doge|傲娇)/i, marker: '傲娇' },
+  // doge 日常就是狗头保命，先于傲娇匹配；写「傲娇」才出 179。
+  { re: /(狗头|狗狗|doge)/i, marker: '狗头' },
+  { re: /(傲娇)/, marker: '傲娇' },
   { re: /(逗你|开个?玩笑|认真的吗|滑稽)/, marker: '狗头' },
   { re: /(吃瓜|围观|看戏)/, marker: '吃瓜' },
   { re: /(委屈|呜呜|想哭|难过|伤心)/, marker: '委屈' },

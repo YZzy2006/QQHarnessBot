@@ -112,6 +112,6 @@ test('MCP web_search reaches Yuanbao through the real tool handler without exter
     await client.connect(transport);
     const response=await client.callTool({name:'web_search',arguments:{query:'公开资料',deep:false}});
     assert.equal(response.isError,undefined);
-    const data=JSON.parse(response.content.find(v=>v.type==='text').text);assert.equal(data.source,'yuanbao-search');assert.equal(data.results[0].url,'https://example.com/official');assert.doesNotMatch(JSON.stringify(response),/fixture-yuanbao/);
+    const data=JSON.parse(response.content.find(v=>v.type==='text').text.replace(/^【工具结果[^\n]*】\n/,''));assert.equal(data.source,'yuanbao-search');assert.equal(data.results[0].url,'https://example.com/official');assert.doesNotMatch(JSON.stringify(response),/fixture-yuanbao/);
   }finally{await client.close();}
 });

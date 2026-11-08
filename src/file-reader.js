@@ -30,7 +30,7 @@ const FAIL_CACHE_TTL_MS = 60 * 1000;
 const RESULT_CACHE = new Map(); // key -> { at, text, bytes }
 const INFLIGHT = new Map();     // key -> Promise<{ text, bytes }>
 
-const TEXT_EXTS = new Set(['.txt', '.md', '.markdown', '.csv', '.json']);
+const TEXT_EXTS = new Set(['.txt', '.md', '.markdown', '.csv', '.json', '.ics', '.tsv']);
 const XLSX_EXTS = new Set(['.xlsx', '.xls']);
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.heic', '.tif', '.tiff', '.svg']);
 const ARCHIVE_EXTS = new Set(['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz']);

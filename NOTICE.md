@@ -23,3 +23,13 @@
 - 其他依赖分别遵守其包内许可证；依赖清单与具体版本以 `package.json` 和 `package-lock.json` 为准。
 
 本项目与腾讯、QQ、SnowLuma、DeepSeek 等第三方不存在因本仓库发布而产生的官方背书关系。
+
+
+## 本次新增第三方资料
+
+- `src/vendor/dsh-bili-whale`：来自Alterssss/dsh-bili-whale的受限认证/签名辅助，MIT，原LICENSE及ORIGIN保留；未包含其人物设定或B站写操作工具。
+- `src/vendor/dsh-video-storyboard`：来自SAOS-3624/dsh-video-storyboard的受限采样/布局辅助，MIT，原LICENSE/NOTICE/ORIGIN保留。
+- `public/workbench-font.woff`：Fusion Pixel Font的重命名字集子集，字体为OFL-1.1；完整字体声明见`docs/licenses/fusion-pixel/`。不随项目MIT重授权字体。
+- 工作台的像素界面为项目实现，未捆绑商业游戏贴图、音效、角色图或用户上传形象。
+
+本发布基于原公开QQHarnessBot的MIT历史继续，保留原始许可和署名；没有复制运行目录的私人package元数据、凭据或Git历史。第三方组件始终适用各自许可。

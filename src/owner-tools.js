@@ -1,5 +1,7 @@
+import {recordRevision} from './workbench-records.js';
 // 管理员便捷指令：独立解析、有限持久化和业务执行；不依赖聊天模型解析权限。
 import fs from 'node:fs';
+import { runDiskMaintenance, formatDiskMaintenance, DISK_HELP } from './disk-maintenance.js';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { bracketSegments, stripOuterBrackets } from './command-args.js';
@@ -9,6 +11,7 @@ const KEY = /^(group|private):[1-9]\d{0,11}$/;
 const MSG_ID = /^-?[1-9]\d*$/;
 const BAD_NAMES = new Set(['__proto__', 'prototype', 'constructor', '我', '自己', '本群', '当前', '全部', '所有']);
 const COMMANDS = new Set([
+  '磁盘状态', '清理预览', '清理磁盘', '清理日志', '磁盘帮助',
   '便捷帮助', '撤回此条', '回应', '取消回应', '提醒我',
   '任务改期', '任务内容', '暂停任务', '恢复任务', '任务顺延', '任务延期',
   '免打扰', '取消免打扰', '诊断', '会话诊断',
@@ -32,10 +35,12 @@ export const OWNER_TOOLS_HELP = [
   '历史范围10~200条，摘要按需调用模型，搜索返回原消息ID供私聊操作。',
   '[更正记忆][目标][旧内容][新内容] → 预览 → 相同指令加[确认]',
   '[少聊话题][目标][宠物] / [恢复话题][目标][宠物] / [话题偏好][目标]',
+  '[磁盘状态] / [清理预览] / [清理磁盘] / [清理日志] / [磁盘帮助]（仅本人私聊）',
   '已有任务与个人提醒均可在 [定时任务][查看所有] 中查看并按ID管理。'
 ].join('\n');
 
 export function parseOwnerToolsCommand(text) {
+  if (/^(?:帮我)?清理(?:一下)?磁盘(?:空间)?[。！!]?$/u.test(String(text).trim())) return { command: '清理磁盘', args: [], confirmed: false };
   const segments = bracketSegments(text);
   let parts;
   if (segments) {
@@ -266,6 +271,13 @@ export function createOwnerTools(d) {
     const { command: c, args: a, confirmed } = cmd;
     const respond = (message) => d.send(ctx.replyKey, message);
     try {
+      if (['磁盘状态', '清理预览', '清理磁盘', '清理日志', '磁盘帮助'].includes(c)) {
+        if (ctx.sourceKey !== `private:${d.ownerQQ()}` || ctx.replyKey !== `private:${d.ownerQQ()}`) { await respond('磁盘维护仅限管理员本人私聊执行。'); return true; }
+        if (a.length || c === '磁盘帮助') { await respond(DISK_HELP); return true; }
+        const mode = c === '磁盘状态' ? 'status' : c === '清理预览' ? 'preview' : 'apply';
+        await respond(formatDiskMaintenance(await (d.diskMaintenance || runDiskMaintenance)(mode)));
+        return true;
+      }
       if (c === '便捷帮助') { await respond(OWNER_TOOLS_HELP); return true; }
       if (['撤回此条', '回应', '取消回应'].includes(c)) {
         let t;
@@ -478,5 +490,9 @@ export function createOwnerTools(d) {
     }
     return true;
   }
-  return { handle, aliasTarget, readOwner };
+  function editNote(id,text,revision){
+    if(typeof text!=='string'||!text.trim()||text.length>500)throw Error('待办正文须1至500字');
+    return changeStore(owner=>{const row=owner.notes.find(r=>r.id===id);if(!row||recordRevision(row)!==revision)throw Error('待办已变化，请刷新后重新编辑');row.text=text.trim();row.updatedAt=now();});
+  }
+  return { handle, aliasTarget, readOwner, editNote };
 }

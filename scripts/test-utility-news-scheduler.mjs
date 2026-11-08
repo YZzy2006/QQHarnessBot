@@ -15,7 +15,7 @@ test('news filters old/future/unsafe results, de-duplicates URLs and labels unkn
 });
 test('news search uses configured credentials without exposing upstream secrets',async()=>{
   let body;
-  const search=createNewsSearch({env:{BOCHA_API_KEY:'private-key'},fetchImpl:async(url,opts)=>{body=JSON.parse(opts.body);return Response.json({code:200,data:{webPages:{value:[{name:'消息',url:'https://example.com',snippet:'摘要',datePublished:'2026-10-22'}]}}});}});
+  const search=createNewsSearch({env:{BOCHA_API_KEY:'private-key'},readKey:()=>'',now:()=>Date.parse('2026-10-23T09:00:00+08:00'),fetchImpl:async(url,opts)=>{body=JSON.parse(opts.body);return Response.json({code:200,data:{webPages:{value:[{name:'消息',url:'https://example.com',snippet:'摘要',datePublished:'2026-10-22'}]}}});}});
   const r=await search('Java');
   assert.equal(r.source,'bocha');assert.equal(body.count,8);assert.equal(JSON.stringify(r).includes('private-key'),false);
   await assert.rejects(createNewsSearch({env:{},readKey:()=>'',fetchImpl:async()=>{throw Error('secret');}})('Java'),/检索/);

@@ -65,7 +65,7 @@ function richState() {
     春树君: { traits: ['喜欢樱花'], progress: [{ at: now - 2000, note: '开始叫我良公主' }] }
   };
   st.modelSeenSeqs = new Set([1]);
-  st.lastSpeaker = { userId: '7770486', isOwner: true };
+  st.lastSpeaker = { userId: '100000001', isOwner: true };
   return st;
 }
 

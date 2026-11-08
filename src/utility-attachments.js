@@ -36,7 +36,7 @@ export function createUtilityAttachments(d) {
       const q=await d.quote(ctx),content=String(await d.readMessage(q));
       if(!content.trim())throw Error('没有提取到可比较的文本');
       if(documents.size>=200&&!documents.has(key+':'+a[0]))throw Error('暂存空间繁忙，请稍后再试');
-      documents.set(key+':'+a[0],{at:now(),text:d.redact(content.slice(0,40000))});
+      documents.set(key+':'+a[0],{at:now(),text:d.redact(content.slice(0,40000)),sourceId:String(ctx.quotedId),partial:content.length>40000||/截断|只提取/.test(content)});
       await d.say(ctx,'已暂存“'+a[0]+'”，仅当前会话的你可用，15分钟后过期。'+(content.length>40000?'正文超过40000字符，暂存已截断。':'')+'\n新版同样暂存后发[文件对比][旧版][新版]。');
     } else if(c==='文件对比') {
       if(a.length!==2)throw Error('[文件对比][旧版标签][新版标签]');
@@ -50,5 +50,5 @@ export function createUtilityAttachments(d) {
     }
     return true;
   }
-  return {handle};
+  return {handle,document:(ctx,label)=>{prune();return documents.get(actor(ctx)+':'+label);}};
 }

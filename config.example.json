@@ -335,5 +335,8 @@
       "perHour": 120,
       "perDay": 500
     }
+  },
+  "workbench": {
+    "origin": ""
   }
 }

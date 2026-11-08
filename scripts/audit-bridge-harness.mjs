@@ -1,3 +1,17 @@
+import * as waitBudgetModule from '../src/wait-budget.js';
+import * as workbenchRecordsModule from '../src/workbench-records.js';
+import * as workbenchServerModule from '../src/workbench-server.js';
+import * as workbenchPortraitModule from '../src/workbench-portrait.js';
+import * as ownerCommandCatalogModule from '../src/owner-command-catalog.js';
+import * as bilibiliCardModule from '../src/bilibili-card.js';
+import * as bilibiliProactiveModule from '../src/bilibili-proactive.js';
+import * as bilibiliBridgeModule from '../src/bilibili-bridge.js';
+import * as bilibiliTextModule from '../src/bilibili-text.js';
+import * as utilityContentModule from '../src/utility-content.js';
+import { resolveInstalledPreset, synchronizePreset } from '../src/preset-sync.js';
+import { renderPatch } from './build-agent-preset-patches.mjs';
+import * as mediaNormalize from '../src/media-normalize.js';
+import * as voiceExpression from '../src/voice-expression.js';
 // Execute the real bridge initialization/functions against temporary files and fake peers.
 // No production config, QQ connection, DSH process, or persistent home is accessed.
 import fs from 'node:fs';
@@ -31,6 +45,9 @@ import * as ownerActions from '../src/owner-actions.js';
 import * as ownerToolsModule from '../src/owner-tools.js';
 import * as companionModule from '../src/companion.js';
 import * as utilitiesModule from '../src/utilities.js';
+import * as workbenchModule from '../src/workbench-http.js';
+import * as workbenchSettingsModule from '../src/workbench-settings.js';
+import * as workbenchStoreModule from '../src/workbench-store.js';
 import * as privateReportModule from '../src/private-report-guard.js';
 import * as utilityNewsModule from '../src/utility-news.js';
 import * as lifeServicesModule from '../src/life-services.js';
@@ -63,10 +80,15 @@ import * as memorySemantic from '../src/memory-semantic.js';
 import * as recurrence from '../src/recurrence.js';
 import * as imageGen from '../src/image-gen.js';
 import * as imageQuota from '../src/image-quota.js';
+import * as mediaSources from '../src/media-sources.js';
+import * as videoReader from '../src/video-reader.js';
+import * as mediaModels from '../src/media-models.js';
+import * as resultCards from '../src/result-cards.js';
+import * as mediaQuota from '../src/media-quota.js';
 import { unwrap, createTurnCollector } from '../src/dsh-client.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
-export async function bridgeHarness({ config = {}, savedState, globals = {} } = {}) {
+export async function bridgeHarness({ config = {}, savedState, files = {}, globals = {} } = {}) {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'qq-audit-bridge-'));
   fs.mkdirSync(path.join(temp, 'src'));
   fs.mkdirSync(path.join(temp, 'state'));
@@ -78,8 +100,13 @@ export async function bridgeHarness({ config = {}, savedState, globals = {} } = 
     emoji: { enabled: false }, vision: { fallbackEnabled: false }, ...config,
   }));
   if (savedState) fs.writeFileSync(path.join(temp, 'state/sessions.json'), JSON.stringify(savedState));
+  for (const [rel, content] of Object.entries(files)) {
+    const target = path.join(temp, rel);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, typeof content === 'string' ? content : JSON.stringify(content));
+  }
   const calls = {
-    created: [], archived: [], sent: [], prompts: [], follows: [], cancelled: [], images: [], http: [],
+    forgotten: [], faces: [], responded: [], created: [], archived: [], sent: [], prompts: [], follows: [], cancelled: [], images: [], http: [], generatedFiles: [], fileUploads: [],
     qzoneSends: [], qzonePosts: [], qzoneFailSend: false, qzoneFailList: false, qzoneTimeoutAfterPost: false,
     qzoneFeeds: [], qzoneLikes: [], qzoneUnlikes: [], qzoneComments: [], qzoneCommentDeletes: [], qzoneFailFeeds: false,
     qzoneFriends: [], qzoneFriendPosts: [], profileLikes: [], friendRequestHandles: [],
@@ -105,7 +132,7 @@ export async function bridgeHarness({ config = {}, savedState, globals = {} } = 
     specialTitles: [], essenceSet: [], essenceDeleted: [], groupSigns: [], emojiLikes: [],
     deletedMsgs: [], friendRemarks: [], deletedFriends: [],
     doubtFriendRequests: [], doubtFriendHandles: [],
-    selfUin: 2867977191
+    selfUin: 100000004
   };
   // 语音发送在桥接里是**直接 fetch 网关**（与文本/表情共用 sendChain，但要自己带 record 段），
   // 所以这里给 VM 注入一个记录型 fetch：既不让测试真的发 QQ 消息，又能断言发出的段内容。
@@ -153,17 +180,18 @@ export async function bridgeHarness({ config = {}, savedState, globals = {} } = 
   };
   const success = (value) => ({ result: { ok: true, value } });
   const api = {
-    events: { follow: (id) => calls.follows.push(id) },
+    events: { follow: (id) => calls.follows.push(id), forget: (id) => calls.forgotten.push(id) },
+    settings: { describe: async () => success({ namespaces: [] }), update: async () => success({ updated: true }) },
     workspace: {
       create: async () => success({ created: false, workspace: { workspaceId: 'fixture-workspace' } }),
       archiveSession: async ({ sessionId }) => { calls.archived.push(sessionId); return success({}); },
     },
     sessions: {
-      create: async (params) => { calls.created.push(params); return success({ sessionId: `fixture-${calls.created.length}` }); },
+      create: async (params) => { calls.created.push(params); return success({ sessionId: params?.sessionId ?? `fixture-${calls.created.length}` }); },
       selectModel: async () => success({ selected: { provider: 'fixture', model: 'fixture' } }),
       prompt: async (params) => { calls.prompts.push(params); return success({}); },
     },
-    respond: async () => success({}),
+    respond: async (params) => { calls.responded.push(params); return success({}); },
     stopSessionWork: async (sessionId) => { calls.cancelled.push(sessionId); return { removed: 0 }; },
     callUnary: async (method, params) => { calls.cancelled.push({ method, params }); return success({ accepted: true }); },
   };
@@ -174,6 +202,8 @@ export async function bridgeHarness({ config = {}, savedState, globals = {} } = 
     if (Array.isArray(message)) {
       return message.map((seg) => {
         if (!seg || typeof seg !== 'object') return '';
+        if (seg.type === 'json')try{const card=JSON.parse(seg.data?.data);if(card.app==='com.tencent.miniapp_01')return `[share]${card.meta?.detail_1?.desc||''} ${card.meta?.detail_1?.qqdocurl||''}`;if(card.app==='com.tencent.structmsg'&&card.view==='news')return `[share]${card.meta?.news?.title||''} ${card.meta?.news?.desc||''} ${card.meta?.news?.jumpUrl||''}`;}catch{}
+        if (seg.type === 'share') return `[share]${seg.data?.title||''} ${seg.data?.content||''} ${seg.data?.url||''}`;
         if (seg.type === 'text') return String(seg.data?.text ?? '');
         if (seg.type === 'face') return `[face:${seg.data?.id ?? ''}]`;
         if (seg.type === 'at') return `@${seg.data?.qq ?? ''}`;
@@ -205,11 +235,30 @@ export async function bridgeHarness({ config = {}, savedState, globals = {} } = 
       return { user_id: calls.selfUin, nickname: 'fixture-bot' };
     }
     async request(action, params = {}) {
+      if(action==='download_file') {
+        calls.generatedFiles.push(params);await calls.afterFilePrepare?.();
+        return {status:'ok',retcode:0,data:{file:'/gateway/downloads/'+params.name}};
+      }
+      if(action==='upload_group_file'||action==='upload_private_file') {
+        calls.fileUploads.push({action,...params});
+        return calls.fileUploadFailure?{status:'failed',retcode:1}:{status:'ok',retcode:0,data:{file_id:'fixture-upload-file'}};
+      }
+      if(action==='get_mini_app_ark'){
+        if(calls.nativeCardFailure)return{status:'failed',retcode:1};
+        return{status:'ok',retcode:0,data:{data:{app:'com.tencent.miniapp_01',view:'view_8C8E89B49BE609866298ADDFF2DBABA4',ver:'1.0.0.19',config:{token:'fixture-native-token',forward:1},meta:{detail_1:{appid:'1109937557',title:params.title,desc:params.desc,preview:params.picUrl,url:'m.q.qq.com/a/s/'+'a'.repeat(32)}},miniappShareOrigin:3,miniappOpenRefer:'10002'}}};
+      }
       if(action==='send_private_msg'||action==='send_group_msg') {
+        if(calls.biliFollowupFailure&&params.message?.length===1&&params.message[0].type==='text')throw Error('fixture followup rejected');
+        if(calls.shareSendFailure&&params.message?.some(s=>s.type==='share'||s.type==='json'&&String(s.data?.data).includes('com.tencent.miniapp_01')||s.type==='text'&&String(s.data?.text).includes('https://www.bilibili.com/video/')))throw Error('fixture share rejected');
         if (calls.locationSendFailure && params.message?.some(s => s.type === 'json' && String(s.data?.data).includes('com.tencent.map'))) throw new Error('fixture location card rejected');
         if(action==='send_private_msg') await this.sendPrivateMessage(params.user_id,params.message);
         else await this.sendGroupMessage(params.group_id,params.message);
-        return {status:'ok',retcode:0,data:{message_id:990000+calls.sent.length}};
+        const mid=990000+calls.sent.length;calls.getMessageData[String(mid)]={message_id:mid,sender:{user_id:calls.selfUin},target_id:params.user_id,group_id:params.group_id,message:calls.cardReadbackFallback?[{type:'text',data:{text:'发送者版本过低，无法展示内容'}}]:params.message};
+        if(params.message?.some(s=>s.type==='image')&&params.message?.some(s=>s.type==='text'&&String(s.data?.text).includes('https://www.bilibili.com/video/'))){
+          const row={...calls.getMessageData[String(mid)],time:Math.floor(Date.now()/1000),message_type:action==='send_private_msg'?'private':'group'};
+          if(!calls.suppressShareHistory)(action==='send_private_msg'?calls.friendHistory:calls.groupHistory).push(row);
+        }
+        return {status:'ok',retcode:0,data:{message_id:mid}};
       }
       if (action === 'send_qzone_msg') {
         calls.qzoneSends.push(params);
@@ -445,9 +494,48 @@ export async function bridgeHarness({ config = {}, savedState, globals = {} } = 
   source = source.replaceAll('import.meta.url', JSON.stringify(pathToFileURL(path.join(temp, 'src/bridge.js')).href));
   source = source.slice(0, source.indexOf("process.on('SIGINT'"));
   source = source.replace('  bot.onPrivateMessage(async (event) => {', `
+  const setStickerEntries = (next) => { stickerEntries = Array.isArray(next) ? next : []; };
+  const getStickerEntries = () => stickerEntries;
+  const upstreamHooks = {
+    syncInstalledPreset, installedPresetYaml, ensureSession, ensureSlangLearnerSession, runSlangResearch, resolvePresetName, deliverPrompt, drainPromptQueue,
+    applyHealedTokens, reportTurnFailure, recordVoiceSentV2, rediscoverDshBase,
+    getSlangEntries: () => slangEntries,
+    completeLearnerTurn(sessionId, output) {
+      const waiters = learnerWaiters.get(sessionId) ?? [];
+      const waiter = waiters.shift();
+      if (!waiter) return false;
+      if (!waiters.length) learnerWaiters.delete(sessionId);
+      clearTimeout(waiter.timer);
+      waiter.resolve(output);
+      return true;
+    },
+    sendToQQ, sendBurstToQQ, sendMessagesV2, sendStickerV2, handleIncoming, handleRecallNotice, handlePokeNotice, handlePendingAnswer, pending, startConsoleServer, cfg, state, api, promptQueues, forwardMediaRefs, rememberForwardMedia, forwardMediaKey, setStickerEntries, getStickerEntries,
+    getSocialV2State, appendSocialV2Message, recordSentMessagesV2,
+    buildWakePromptV2, buildWakeSnapshotV2, sendWakePromptV2, socialV2,
+    syncStickerLibrary, listStickersForV2, getStickerImageData,
+    refreshMode, modeAllowed, trackTurnEvent, replayPendingWakeReasonsV2,
+    collectors, reverse, setupSleepTimerV2,
+    handleSessionSnapshot, replayDeferredDeliveries, deliveryCursors, sessionPolicy,
+    getInitialPrompt, setInitialPrompt, loadInitialPrompts, formatInitialPromptV2,
+    initialPrompts, initialPromptMaxChars,
+    extractMediaFromSegments, segmentsToText, fetchOneBotImage, fetchMediaData, resolveMediaList,
+    emojiCdnCandidates, getImageDimensions, acceptImageBuffer, MAX_MEDIA_BYTES, bot,
+    isConversationBusyV2, v2TurnStartAt, turnLeaseNoted, TURN_BUSY_LEASE_MS,
+    settingFromDshNamespace, selfIdentityTextV2, buildWakeReminderPromptV2,
+    getMode() { return currentMode; },
+    setSelfIdentity(display, id) {
+      selfDisplayName = String(display ?? '');
+      selfUserId = String(id ?? '');
+      selfNickname = selfDisplayName.toLowerCase() || 'deepseek';
+    },
+    flushQueue, retireSession,
+    voiceCfg, voiceLibrary, resolveVoicePathForV2, resolveVoicePathForOperator,
+    voiceBudgetCheck, sendVoiceV2, sendVoiceForV2, assertOutboundAuditOk,
+  };
   return {
+    ...upstreamHooks,
     ensureSession, ensureSlangLearnerSession, resolvePresetName, deliverPrompt, drainPromptQueue,
-    sendToQQ, sendStickerV2, handleIncoming, startConsoleServer, cfg, state, api, promptQueues,
+    sendToQQ, sendImageV2, sendStickerV2, handleIncoming, startConsoleServer, cfg, state, api, promptQueues,
     getSocialV2State, appendSocialV2Message, recordSentMessagesV2,
     buildWakePromptV2, buildWakeSnapshotV2, sendWakePromptV2, socialV2,
     recordSessionSnapshot, rebuildInFlightCollector, isConversationBusyV2, drainPendingWakesV2: typeof drainPendingWakesV2 === 'function' ? drainPendingWakesV2 : undefined,
@@ -457,7 +545,7 @@ export async function bridgeHarness({ config = {}, savedState, globals = {} } = 
     getQzoneState: () => qzoneState,
     getQzoneSocialState: () => qzoneSocialState,
     getFriendRequestState: () => friendRequestState,
-    getReminders: () => reminders, companion, lifeServices, sendCompanionMessage, sendCompanionLocation, utilities, privateReportGuard, sendUtilityMessage, resolveReplyInfo, appendMemoryV2,
+    getReminders: () => reminders, companion, lifeServices, sendCompanionMessage, sendCompanionLocation, utilities, privateReportGuard, sendUtilityMessage, sendBilibiliShare, resolveReplyInfo, appendMemoryV2,
     ownerTools, loadReminders, saveReminders, fireDueReminders, saveSocialV2State, resolveAnyTarget,
     handleFriendRequestEvent,
     handleFriendAddedEvent,
@@ -469,7 +557,7 @@ export async function bridgeHarness({ config = {}, savedState, globals = {} } = 
     flushQueue, retireSession,
     voiceCfg, voiceLibrary, resolveVoicePathForV2, resolveVoicePathForOperator,
     voiceBudgetCheck, sendVoiceV2, sendVoiceForV2, assertOutboundAuditOk,
-    setMode(value) { currentMode = value; },
+    setMode(value) { currentMode = value; modeKnown = true; },
     setReady(value) { dshReady = value; },
     setPresets(value) { dshPresetIds = value; dshDefaultPreset = 'standard'; },
     resetEpoch() { sessionEpoch++; },
@@ -477,6 +565,7 @@ export async function bridgeHarness({ config = {}, savedState, globals = {} } = 
   bot.onPrivateMessage(async (event) => {`);
   const timers = new Set();
   const context = vm.createContext({
+    performance,
     fs, os, path, http, crypto, fileURLToPath, URL, Buffer, AbortSignal, console: { log() {}, error() {} },
     fetch: fakeFetch,
     // 锁文件探测用（bridge.js 顶层的 consolePortInUse）；
@@ -490,11 +579,15 @@ export async function bridgeHarness({ config = {}, savedState, globals = {} } = 
     NodeApiClient: class { constructor() { return api; } },
     SnowLumaWebSocketClient: FakeBot, text: (s) => s,
     discoverDshLaunchToken: () => '', unwrap, createTurnCollector,
+    discoverDshBaseUrl: async () => null,
+    resolveInstalledPreset, synchronizePreset, renderPatch,
+    ...ownerCommandCatalogModule, ...workbenchPortraitModule, ...workbenchRecordsModule,...waitBudgetModule, ...workbenchServerModule, ...workbenchModule, ...workbenchSettingsModule, ...workbenchStoreModule, ...mediaNormalize, ...voiceExpression, ...bilibiliBridgeModule,...bilibiliCardModule, ...bilibiliProactiveModule, ...bilibiliTextModule, ...utilityContentModule,
+    isPublicBilibiliVideo: async () => false, // No anonymous network probes in isolated tests.
     ...markdown, ...sensitive, ...wait, ...safeFetch, ...forward, ...slang, ...sticker, ...qzone, ...groupChat, ...qzoneSocial, ...qzoneFeedQuery, ...qzoneProfileLike, ...friendRequests, ...friendViews, ...ownerCommandGuide, ...ownerConsole, ...ownerInspect, ...qqFaces, ...whitelistCommands, ...ownerExtra, ...ownerActions, ...ownerToolsModule, ...ownerSummaryModule, ...commandArgs, ...targetResolve, ...timeParse, ...proactivePolicy, ...proactiveTopics, ...qwenVl, ...groupViews, ...adminActions,
     ...modelPrices, ...tokenLedger, ...voiceLib, ...stateAcl,
     ...voiceAsr, ...fileReader, ...presetPrompt, ...roleCard, ...linkPreview,
     ...ttsBailian, ...ttsNext, ...snowlumaConn, ...reliability, ...followup, ...socialState,
-    ...memorySemantic, ...recurrence, ...imageGen, ...imageQuota, ...companionModule, ...lifeServicesModule, ...utilitiesModule, ...privateReportModule, ...utilityNewsModule,
+    ...memorySemantic, ...recurrence, ...imageGen, ...imageQuota, ...mediaSources, ...videoReader, ...mediaModels, ...resultCards, ...mediaQuota, ...companionModule, ...lifeServicesModule, ...utilitiesModule, ...privateReportModule, ...utilityNewsModule,
     // bridge.js 对这些导出做了重命名导入；VM 注入的是原始导出名，这里补别名。
     setMemoryVectorLogger: memorySemantic.setLogger,
     warmMemoryVectors: memorySemantic.warmUp,
@@ -527,8 +620,8 @@ export async function bridgeHarness({ config = {}, savedState, globals = {} } = 
   // Execute the pure model view in the bridge realm. Its plain-object checks
   // should see the same prototypes as real bridge messages, just as in Node.
   const modelViewSource = fs.readFileSync(path.join(root, 'src/qq-model-view.js'), 'utf8').replace(/^export /gm, '');
-  vm.runInContext(`Object.assign(globalThis, (() => { ${modelViewSource}\nreturn { compactModelMessage, compactModelData, serializeModelData }; })());`, context);
-  vm.runInContext(source + '\nglobalThis.auditReady = main();', context);
+  vm.runInContext(`Object.assign(globalThis, (() => { ${modelViewSource}\nreturn { compactModelMessage, compactModelData, serializeModelData, describeAge, sanitizeUntrustedText }; })());`, context);
+  vm.runInContext('"use strict";\n' + source + '\nglobalThis.auditReady = main();', context);
   const bridge = await context.auditReady;
   bridge.setPresets(['standard', 'qq-chat', 'qq-chat-v2']);
   bridge.setReady(true);

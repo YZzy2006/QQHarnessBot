@@ -41,8 +41,8 @@ test('主动唤醒：目标可带空格', () => {
   assert.deepEqual(parseOwnerActionCommand('[主动唤醒][测试 群聊]'), {
     ok: true, action: 'wake', target: '测试 群聊'
   });
-  assert.deepEqual(parseOwnerActionCommand('主动唤醒 示例好友甲'), {
-    ok: true, action: 'wake', target: '示例好友甲'
+  assert.deepEqual(parseOwnerActionCommand('主动唤醒 测试联系人'), {
+    ok: true, action: 'wake', target: '测试联系人'
   });
   assert.equal(parseOwnerActionCommand('[主动唤醒]').error, 'missing-args');
 });
@@ -51,40 +51,40 @@ test('主动对话：目标 + 内容（内容可带空格）', () => {
   assert.deepEqual(parseOwnerActionCommand('[主动对话][测试群聊][说一句 晚安]'), {
     ok: true, action: 'talk', target: '测试群聊', content: '说一句 晚安'
   });
-  assert.deepEqual(parseOwnerActionCommand('主动对话 示例好友甲 给我 说早安'), {
-    ok: true, action: 'talk', target: '示例好友甲', content: '给我 说早安'
+  assert.deepEqual(parseOwnerActionCommand('主动对话 测试联系人 给我 说早安'), {
+    ok: true, action: 'talk', target: '测试联系人', content: '给我 说早安'
   });
-  assert.equal(parseOwnerActionCommand('[主动对话][示例好友甲]').error, 'missing-args');
-  assert.equal(parseOwnerActionCommand(`[主动对话][示例好友甲][${'长'.repeat(501)}]`).error, 'content-too-long');
+  assert.equal(parseOwnerActionCommand('[主动对话][测试联系人]').error, 'missing-args');
+  assert.equal(parseOwnerActionCommand(`[主动对话][测试联系人][${'长'.repeat(501)}]`).error, 'content-too-long');
 });
 
 test('主动问候：状态/开关/简写', () => {
-  assert.deepEqual(parseOwnerActionCommand('[主动状态][示例好友甲]'), {
-    ok: true, action: 'proactiveStatus', target: '示例好友甲'
+  assert.deepEqual(parseOwnerActionCommand('[主动状态][测试联系人]'), {
+    ok: true, action: 'proactiveStatus', target: '测试联系人'
   });
-  assert.deepEqual(parseOwnerActionCommand('[主动开关][示例好友甲][off]'), {
-    ok: true, action: 'proactiveToggle', target: '示例好友甲', enabled: false
+  assert.deepEqual(parseOwnerActionCommand('[主动开关][测试联系人][off]'), {
+    ok: true, action: 'proactiveToggle', target: '测试联系人', enabled: false
   });
   assert.deepEqual(parseOwnerActionCommand('[主动开关 测试群聊 on]'), {
     ok: true, action: 'proactiveToggle', target: '测试群聊', enabled: true
   });
-  assert.deepEqual(parseOwnerActionCommand('[关闭主动][示例好友甲]'), {
-    ok: true, action: 'proactiveToggle', target: '示例好友甲', enabled: false
+  assert.deepEqual(parseOwnerActionCommand('[关闭主动][测试联系人]'), {
+    ok: true, action: 'proactiveToggle', target: '测试联系人', enabled: false
   });
-  assert.deepEqual(parseOwnerActionCommand('[开启主动][示例好友甲]'), {
-    ok: true, action: 'proactiveToggle', target: '示例好友甲', enabled: true
+  assert.deepEqual(parseOwnerActionCommand('[开启主动][测试联系人]'), {
+    ok: true, action: 'proactiveToggle', target: '测试联系人', enabled: true
   });
   // 不带 on/off = 查看状态
-  assert.deepEqual(parseOwnerActionCommand('[主动开关][示例好友甲]'), {
-    ok: true, action: 'proactiveStatus', target: '示例好友甲'
+  assert.deepEqual(parseOwnerActionCommand('[主动开关][测试联系人]'), {
+    ok: true, action: 'proactiveStatus', target: '测试联系人'
   });
-  assert.equal(parseOwnerActionCommand('[主动开关][示例好友甲][maybe]').error, 'invalid-mode');
+  assert.equal(parseOwnerActionCommand('[主动开关][测试联系人][maybe]').error, 'invalid-mode');
   assert.equal(parseOwnerActionCommand('[主动状态]').error, 'missing-args');
 });
 
 test('主动问候：状态/开关格式化', () => {
   const status = formatProactiveStatus({
-    target: '示例好友甲（私聊 7770486）',
+    target: '测试联系人（私聊 100000001）',
     enabled: true,
     lastText: '2026-10-21 10:00',
     ageText: '2 小时前',
@@ -124,20 +124,20 @@ test('限额调整：查看/单档/三档', () => {
 });
 
 test('限额重置', () => {
-  assert.deepEqual(parseOwnerActionCommand('[限额重置][示例好友甲]'), {
-    ok: true, action: 'limitReset', target: '示例好友甲'
+  assert.deepEqual(parseOwnerActionCommand('[限额重置][测试联系人]'), {
+    ok: true, action: 'limitReset', target: '测试联系人'
   });
   assert.equal(parseOwnerActionCommand('[限额重置]').error, 'missing-args');
 });
 
 test('定时任务：时间/目标/内容', () => {
-  assert.deepEqual(parseOwnerActionCommand('[定时任务][明天早上][示例好友甲][给我用语音打招呼说早安]'), {
-    ok: true, action: 'schedule', timeText: '明天早上', target: '示例好友甲', content: '给我用语音打招呼说早安'
+  assert.deepEqual(parseOwnerActionCommand('[定时任务][明天早上][测试联系人][给我用语音打招呼说早安]'), {
+    ok: true, action: 'schedule', timeText: '明天早上', target: '测试联系人', content: '给我用语音打招呼说早安'
   });
   assert.deepEqual(parseOwnerActionCommand('定时任务 2小时后 测试群聊 分享昨天的大事件'), {
     ok: true, action: 'schedule', timeText: '2小时后', target: '测试群聊', content: '分享昨天的大事件'
   });
-  assert.equal(parseOwnerActionCommand('[定时任务][明天早上][示例好友甲]').error, 'missing-args');
+  assert.equal(parseOwnerActionCommand('[定时任务][明天早上][测试联系人]').error, 'missing-args');
 });
 
 test('定时任务：查看所有 / 取消 / 帮助', () => {
@@ -152,25 +152,25 @@ test('定时任务：查看所有 / 取消 / 帮助', () => {
 });
 
 test('定时任务：次数/截止/永久条件', () => {
-  assert.deepEqual(parseOwnerActionCommand('[定时任务][每天8点][示例好友甲][说早安][连续7天]'), {
-    ok: true, action: 'schedule', timeText: '每天8点', target: '示例好友甲', content: '说早安', remaining: 7
+  assert.deepEqual(parseOwnerActionCommand('[定时任务][每天8点][测试联系人][说早安][连续7天]'), {
+    ok: true, action: 'schedule', timeText: '每天8点', target: '测试联系人', content: '说早安', remaining: 7
   });
-  assert.equal(parseOwnerActionCommand('[定时任务][每天8点][示例好友甲][说早安][共10次]').remaining, 10);
-  assert.equal(parseOwnerActionCommand('[定时任务][每天8点][示例好友甲][说早安][10次]').remaining, 10);
-  assert.equal(parseOwnerActionCommand('[定时任务][每天8点][示例好友甲][说早安][到2026-10-28]').endText, '到2026-10-28');
-  const forever = parseOwnerActionCommand('[定时任务][每天8点][示例好友甲][说早安][永久]');
+  assert.equal(parseOwnerActionCommand('[定时任务][每天8点][测试联系人][说早安][共10次]').remaining, 10);
+  assert.equal(parseOwnerActionCommand('[定时任务][每天8点][测试联系人][说早安][10次]').remaining, 10);
+  assert.equal(parseOwnerActionCommand('[定时任务][每天8点][测试联系人][说早安][到2026-10-28]').endText, '到2026-10-28');
+  const forever = parseOwnerActionCommand('[定时任务][每天8点][测试联系人][说早安][永久]');
   assert.equal(forever.ok, true);
   assert.equal('remaining' in forever, false);
   assert.equal('endText' in forever, false);
   // 正文里的「7天」不能当成条件。
-  const content = parseOwnerActionCommand('[定时任务][每天8点][示例好友甲][连续7天都提醒我]');
+  const content = parseOwnerActionCommand('[定时任务][每天8点][测试联系人][连续7天都提醒我]');
   assert.equal(content.content, '连续7天都提醒我');
   assert.equal('remaining' in content, false);
 });
 
 test('定时任务格式化：列表/取消/候选', () => {
   const list = formatScheduleList({ items: [
-    { id: 'r_1', atText: '2026-10-22 08:00', ruleText: '每天 08:00', repeatText: '每天', remaining: 7, target: '示例好友甲', content: '说早安' },
+    { id: 'r_1', atText: '2026-10-22 08:00', ruleText: '每天 08:00', repeatText: '每天', remaining: 7, target: '测试联系人', content: '说早安' },
     { id: 'r_2', atText: '2026-10-22 08:00', repeatText: '一次性', target: '测试群聊', content: '提醒一下' }
   ] });
   assert.match(list, /【定时任务】2 条/);
@@ -179,10 +179,10 @@ test('定时任务格式化：列表/取消/候选', () => {
   assert.match(list, /取消 序号/);
 
   assert.equal(formatScheduleList({ items: [] }).includes('当前没有定时任务'), true);
-  assert.match(formatScheduleCancel({ id: 'r_1', atText: '每天 08:00', target: '示例好友甲' }), /已取消定时任务 r_1/);
+  assert.match(formatScheduleCancel({ id: 'r_1', atText: '每天 08:00', target: '测试联系人' }), /已取消定时任务 r_1/);
   assert.match(formatScheduleCancel({ all: true, count: 3 }), /全部 3 条/);
   assert.match(formatScheduleCandidates({ ref: '早安', candidates: [
-    { id: 'r_1', atText: '每天 08:00', target: '示例好友甲', content: '说早安' }
+    { id: 'r_1', atText: '每天 08:00', target: '测试联系人', content: '说早安' }
   ] }), /匹配到 1 条/);
   assert.match(formatScheduleResult({ id: 'r_1', atText: '每天 08:00', target: 'X', content: '说早安', repeatText: '每天', remaining: 7 }), /共 7 次/);
   assert.match(formatScheduleResult({ id: 'r_1', atText: '每天 08:00', target: 'X', content: '说早安', repeatText: '每天' }), /长期，直到取消/);

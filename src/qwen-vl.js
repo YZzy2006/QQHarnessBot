@@ -60,6 +60,8 @@ export async function describeImage({
   model = QWEN_VL_DEFAULT_MODEL,
   timeoutMs = 60000,
   maxChars = 600,
+  maxTokens = 600,
+  requireComplete = false,
   apiKey = '',
   fetchImpl = fetch,
   endpoint = QWEN_VL_ENDPOINT
@@ -80,7 +82,7 @@ export async function describeImage({
   async function attempt(imageUrl) {
     const body = {
       model: String(model || QWEN_VL_DEFAULT_MODEL),
-      max_tokens: 600,
+      max_tokens: Math.max(32,Math.min(4096,Number(maxTokens)||600)),
       messages: [{
         role: 'user',
         content: [
@@ -103,9 +105,11 @@ export async function describeImage({
       const detail = json?.error?.message || json?.message || json?.error?.code || `HTTP ${res.status}`;
       throw new Error(`千问识图失败：${detail}`);
     }
+    if(requireComplete&&json?.choices?.[0]?.finish_reason==='length')throw new Error('图片结构化结果达到输出上限，请裁剪截图重试');
     const content = json?.choices?.[0]?.message?.content;
     const text = textOfContent(content).trim();
     if (!text) throw new Error('千问识图没有返回文字描述');
+    if(requireComplete&&[...text].length>maxChars)throw new Error('图片结构化结果过长，请裁剪截图重试');
     return truncateByCodePoint(text, maxChars);
   }
 

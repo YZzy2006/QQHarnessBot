@@ -5,12 +5,15 @@ import { bridgeHarness } from './audit-bridge-harness.mjs';
 import { createOwnerTools, backupOwnerFile } from '../src/owner-tools.js';
 const OWNER = 123, GROUP = 12345, FRIEND = 23456;
 let pass = 0;
+let virtualSendClock = 0;
 const bridge = await bridgeHarness({
   config: {
     sendDelayMinMs: 0, sendDelayMaxMs: 0,
     allow: { private: [String(OWNER), String(FRIEND)], groups: [String(GROUP)] }
   },
   globals: {
+    // Functional command tests use a virtual pacing clock; queue timing is tested separately.
+    performance: { now: () => (virtualSendClock += 5000) },
     createOwnerTools: (deps) => createOwnerTools({
       ...deps, flushMemory: async () => {}, removeMemory: async () => 0, indexMemory: async () => true,
       summarize: async () => '主要话题：报告。结论：周五提交。待办：甲提交报告。'
@@ -19,7 +22,7 @@ const bridge = await bridgeHarness({
 });
 const { calls, temp } = bridge;
 calls.groups = [{ group_id: GROUP, group_name: '测试 群聊' }];
-calls.qzoneFriends = [{ user_id: FRIEND, nickname: '示例好友甲', remark: '示例好友甲' }];
+calls.qzoneFriends = [{ user_id: FRIEND, nickname: '测试联系人', remark: '测试联系人' }];
 bridge.setMode('reserved2'); bridge.setReady(true);
 bridge.setPresets(['standard', 'qq-chat', 'qq-chat-v2']);
 let seq = 100;
@@ -63,7 +66,7 @@ await test('群内已有状态/帮助也明确响应并私聊', async () => {
   assert.ok(calls.sent.some((item) => item.kind === 'private'));
   await command('[全部好友]', { kind: 'group', id: GROUP });
   assert.ok(calls.sent.some((item) => item.kind === 'group' && item.text.includes('已私聊')));
-  assert.ok(calls.sent.some((item) => item.kind === 'private' && item.text.includes('示例好友甲')));
+  assert.ok(calls.sent.some((item) => item.kind === 'private' && item.text.includes('测试联系人')));
 });
 await test('非管理员同群发送便签/撤回指令不产生管理动作', async () => {
   const before = fs.readFileSync(path.join(temp, 'state/owner-tools.json'), 'utf8');

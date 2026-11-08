@@ -1,3 +1,5 @@
+import {longPollClientBudget} from './wait-budget.js';
+import { voiceStyles, VOICE_EXPRESSION_HINT } from './voice-expression.js';
 // 安全版 QQ MCP server（stdio）。由 DSH 的 MCP 客户端 spawn。
 //
 // 安全设计：
@@ -7,6 +9,7 @@
 //   allow.groups / allow.private，否则拒绝 —— agent 只能往被允许的地方发消息。
 // - 所有调用走 OneBot HTTP API（httpUrl + accessToken）。
 import fs from 'node:fs';
+import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -23,6 +26,42 @@ import { addDays, formatBeijingDate, nextImportantDate, nextOccurrence } from '.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
 
+// ── 会话绑定（SELF_KEY）──────────────────────────────────────────────────────
+//
+// 桥接为每个 QQ 会话派生一个 MCP 进程，spawn 时注入 `QQ_BRIDGE_SELF_KEY=<该会话 key>`。
+// 这个值**不由模型决定**（模型既看不到也改不了），因此可以当作可信身份。
+//
+// 为什么必须有这道门：MCP 协议里没有「这次调用来自哪个会话」的字段，所有带 `key`
+// 参数的工具本来只能按**模型给的 key** 去解析会话令牌 —— 模型（或被注入的群友文本）
+// 只要把 key 换成别的群号，就能读到那个群的会话状态。有了 SELF_KEY，凡带 key 的调用
+// 都先与它比对，不一致一律拒绝。
+//
+// 未注入 SELF_KEY 时（例如手动直跑本文件调试）**保持既有行为**，不因为缺少这个
+// 环境变量而把整个 MCP 变成不可用 —— 那样会让部署升级变成一次硬故障。
+const SELF_KEY = canonicalKey(process.env.QQ_BRIDGE_SELF_KEY) || '';
+/** 所有「非当前会话」的拒绝共用同一句文案：不可区分，避免群号枚举 oracle。 */
+const SELF_KEY_DENIAL = '该会话不可用';
+
+/** 归一化会话 key（与桥接 canonicalKey 同口径：去掉前导零、校验正整数）。 */
+function canonicalKey(value) {
+  const m = /^(group|private):(\d{1,20})$/.exec(String(value ?? '').trim());
+  if (!m) return '';
+  const id = Number(m[2]);
+  if (!Number.isSafeInteger(id) || id <= 0) return '';
+  return `${m[1]}:${id}`;
+}
+
+/**
+ * 校验一次带 key 的调用是否指向当前会话。
+ * @returns {string} 拒绝理由；空串表示放行。
+ */
+function selfKeyGuard(key) {
+  if (!SELF_KEY) return '';
+  const canonical = canonicalKey(key);
+  if (!canonical || canonical !== SELF_KEY) return SELF_KEY_DENIAL;
+  return '';
+}
+
 function loadConfig() {
   try {
     let text = fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8');
@@ -37,7 +76,7 @@ const cfg = loadConfig();
 
 // TTS 语气（style）列表：从配置读取；缺失时用内置默认，保证工具 schema 不为空。
 const DEFAULT_VOICE_STYLE_IDS = ['daily', 'coax', 'happy', 'gentle', 'serious', 'tired', 'sing'];
-const configuredVoiceStyles = cfg.socialV2?.voice?.styles;
+const configuredVoiceStyles = voiceStyles(cfg.socialV2?.voice?.styles);
 const VOICE_STYLE_IDS = (configuredVoiceStyles && typeof configuredVoiceStyles === 'object' && !Array.isArray(configuredVoiceStyles))
   ? ['daily', ...Object.keys(configuredVoiceStyles).filter((id) => id !== 'daily' && /^[a-z0-9][a-z0-9_-]{0,31}$/i.test(id))]
   : DEFAULT_VOICE_STYLE_IDS;
@@ -124,9 +163,15 @@ function agentApiBase() {
 function readConsoleToken() {
   // 每次请求都重新读取，优先 config.json 里的 consoleToken，其次 state/console-token，
   // 避免 token 变化后 MCP 仍使用启动时缓存的旧值导致一直 401。
+  //
+  // 必须与桥接的校验口径**完全一致**（bridge.js 的 startConsoleServer：长度 16~128、
+  // 只允许 [A-Za-z0-9_-]，不合法就忽略并回退 state/console-token）。否则用户手填一个
+  // 短令牌时桥接会正常运行，而 MCP 拿着这个桥接根本不认的值去请求 —— 每个工具都 401，
+  // 且错误信息里看不出原因是"config.json 里的令牌格式不合法"。
   try {
     const c = getConfig();
-    if (c.consoleToken) return String(c.consoleToken);
+    const configured = String(c.consoleToken ?? '').trim();
+    if (/^[A-Za-z0-9_-]{16,128}$/.test(configured)) return configured;
   } catch {}
   try {
     const tokenFile = path.join(ROOT, 'state', 'console-token');
@@ -136,14 +181,56 @@ function readConsoleToken() {
   }
 }
 
+/**
+ * 把桥接返回的 `error` 变成可读文本。
+ *
+ * 为什么必须有：桥接个别分支会回一个**对象**（例如 `{code, message}`），直接
+ * `new Error(obj)` 会把它 String 成 "[object Object]" —— 模型和运维都读不到任何信息。
+ * r3 的已知未修项里就记着 `qq_wait_for_messages` 出现过 `error: "\"Error: [object Object]\""`。
+ */
+function errorText(value, fallback) {
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (value && typeof value === 'object') {
+    try {
+      const text = JSON.stringify(value);
+      if (text && text !== '{}') return text.slice(0, 500);
+    } catch {}
+    const message = value.message ?? value.msg ?? value.error;
+    if (typeof message === 'string' && message.trim()) return message.trim().slice(0, 500);
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return fallback;
+}
+
 async function agentApi(path, init = {}) {
   const timeoutMs = init.timeoutMs || 15000;
   const { timeoutMs: _omit, ...rest } = init;
+  const headers = agentHeaders(rest.headers);
+  const res = await fetch(`${agentApiBase()}${path}`, { ...rest, headers, signal: AbortSignal.timeout(timeoutMs) });
+  let body = null;
+  try { body = await res.json(); } catch { body = null; }
+  if (!res.ok) {
+    throw new Error(errorText(body?.error, `桥接 API HTTP ${res.status}`));
+  }
+  // 桥接的部分端点会用 200 + {ok:false,error} 表达业务失败（例如发送被审计拦截）。
+  // 不检查 body.ok 会把「被拦截」当成「发送成功」上报给模型 —— 模型据此认为消息已发出，
+  // 于是不再重试也不告诉用户，是典型的静默错误。
+  if (body && typeof body === 'object' && body.ok === false) {
+    throw new Error(errorText(body.error, '桥接 API 返回 ok:false（未说明原因）'));
+  }
+  return body;
+}
+
+/**
+ * 桥接 API 请求头（含控制台令牌、x-agent-call 与调用方附加头）。
+ * 拆出来是为了长轮询通道复用同一套鉴权，避免两条通路口径漂移。
+ */
+function agentHeaders(extra = {}) {
   const consoleToken = readConsoleToken();
   const headers = {
     'content-type': 'application/json',
     ...(consoleToken ? { 'x-console-token': consoleToken } : {}),
-    ...(rest.headers ?? {})
+    ...(extra ?? {})
   };
   // 声明「这是一次智能体调用」。桥接据此把「没带会话令牌」判定为**拒绝**，而不是
   // 退化成「管理端全权」——所以这个头绝不能随 token 一起被省略。历史上 331/355/379/877
@@ -152,19 +239,93 @@ async function agentApi(path, init = {}) {
   // 令牌本身仍然只在真有时才发：/api/status 的模式探测（legacyReadToolAllowed）本来就是
   // 无令牌调用，桥接对它单独放行并按最小对象返回。
   headers['x-agent-call'] = '1';
-  const res = await fetch(`${agentApiBase()}${path}`, { ...rest, headers, signal: AbortSignal.timeout(timeoutMs) });
-  let body = null;
-  try { body = await res.json(); } catch { body = null; }
-  if (!res.ok) {
-    throw new Error(body?.error || `桥接 API HTTP ${res.status}`);
-  }
-  // 桥接的部分端点会用 200 + {ok:false,error} 表达业务失败（例如发送被审计拦截）。
-  // 不检查 body.ok 会把「被拦截」当成「发送成功」上报给模型 —— 模型据此认为消息已发出，
-  // 于是不再重试也不告诉用户，是典型的静默错误。
-  if (body && typeof body === 'object' && body.ok === false) {
-    throw new Error(body.error || '桥接 API 返回 ok:false（未说明原因）');
-  }
-  return body;
+  return headers;
+}
+
+/**
+ * 长轮询专用 POST（`node:http`，不经过 undici）。
+ *
+ * 为什么必须单独一条：Node 的全局 `fetch` 是 undici，自带 300 秒 `headersTimeout`。
+ * 而 `qq_wait_for_messages` 的常规用法就是 `timeoutMs=300000` 的沉睡前观察 ——
+ * 客户端会在第 301 秒以 `fetch failed / Headers Timeout Error` 断掉，桥接侧的
+ * 长轮询却还在跑满自己的预算：AI 拿不到结果只能重试，而 `activeWaits` 仍占着会话
+ * （重新等待被 429），于是空转烧 token（见 issue #24）。`node:http` 没有默认响应超时，
+ * 超时完全由这里的计时器按调用方预算控制。
+ */
+function agentApiLongPoll(path, init = {}) {
+  const timeoutMs = Math.max(1000, Number(init.timeoutMs) || 15000);
+  const url = new URL(`${agentApiBase()}${path}`);
+  const body = init.body == null ? '' : String(init.body);
+  const headers = agentHeaders(init.headers);
+  headers['content-length'] = Buffer.byteLength(body);
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let req;
+    let res;
+    const finish = (error, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolve(value);
+    };
+    const timer = setTimeout(() => {
+      const error = new Error(`等待超时（${Math.round(timeoutMs / 1000)}s）`);
+      finish(error);
+      req?.destroy(error);
+      res?.destroy();
+    }, timeoutMs);
+    timer.unref?.();
+    try {
+      req = http.request({
+        hostname: url.hostname,
+        port: url.port || 80,
+        path: url.pathname + url.search,
+        method: init.method || 'GET',
+        headers,
+        timeout: 0,
+        signal: init.signal
+      }, (response) => {
+        res = response;
+        const chunks = [];
+        let size = 0;
+        response.on('data', (chunk) => {
+          if (settled) return;
+          size += chunk.length;
+          // 桥接的 wait 响应本来就是小 JSON；超过 4MB 说明对端异常，别把内存吃光。
+          if (size > 4 * 1024 * 1024) {
+            finish(new Error('等待响应体过大，已中止'));
+            response.destroy();
+            return;
+          }
+          chunks.push(chunk);
+        });
+        response.on('error', (error) => finish(error));
+        response.on('aborted', () => finish(new Error('等待响应中断')));
+        response.on('close', () => { if (!response.complete) finish(new Error('等待响应中断')); });
+        response.on('end', () => {
+          if (settled) return;
+          let parsed = null;
+          try { parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { parsed = null; }
+          const status = response.statusCode || 0;
+          if (status < 200 || status >= 300) {
+            finish(new Error(errorText(parsed?.error, `桥接 API HTTP ${status}`)));
+            return;
+          }
+          if (parsed && typeof parsed === 'object' && parsed.ok === false) {
+            finish(new Error(errorText(parsed.error, '桥接 API 返回 ok:false（未说明原因）')));
+            return;
+          }
+          finish(null, parsed);
+        });
+      });
+      req.on('error', (error) => finish(error));
+      req.end(body);
+    } catch (error) {
+      finish(error);
+      req?.destroy();
+    }
+  });
 }
 
 async function authorizeRead(key) {
@@ -185,7 +346,7 @@ async function legacyReadToolAllowed() {
   return String(status?.mode ?? '') === 'closed-agent';
 }
 
-const server = new McpServer({ name: 'snowluma-safe', version: '0.2.0-r3' });
+const server = new McpServer({ name: 'snowluma-safe', version: '0.2.1-r2' });
 
 // ── 工具开关必须在**注册期**生效，而不是只在校验期 ──────────────────────────
 //
@@ -218,6 +379,7 @@ const TOOL_CONFIG_FLAGS = {
   qq_get_my_recent_messages: 'getMyRecent',
   qq_get_message_detail: 'getMessageDetail',
   qq_get_active_members: 'getActiveMembers',
+  qq_get_group_members: 'getGroupMembers',
   qq_memory_append: 'memory',
   qq_memory_query: 'memory',
   qq_memory_remove: 'memory',
@@ -245,15 +407,96 @@ const TOOL_CONFIG_FLAGS = {
   qq_delete_sticker: 'deleteSticker',
 };
 const disabledTools = [];
+// 别名必须同时出现在 schema 与规范化入口中，否则 Zod 会先把它丢弃。
+// 只兼容已有的等价参数，不把消息里的空格解释成分条。
+const TOOL_ARGUMENT_ALIASES = {
+  qq_send_message: { key: ['target'], messages: ['message', 'text', 'content'] },
+  qq_get_message_detail: { key: ['target'] }
+};
+
+function foldArgumentAliases(args, aliases, required = new Set()) {
+  const next = { ...args };
+  for (const [canonical, alternatives] of Object.entries(aliases)) {
+    const supplied = [canonical, ...alternatives].filter((field) => args[field] !== undefined);
+    if (!supplied.length) {
+      if (required.has(canonical)) throw new Error(`缺少参数 ${canonical}（也可使用 ${alternatives.join('/')}）`);
+      continue;
+    }
+    const comparable = (value) => canonical === 'key' ? (canonicalKey(value) || String(value)) : JSON.stringify(value);
+    if (supplied.some((field) => comparable(args[field]) !== comparable(args[supplied[0]]))) {
+      throw new Error(`参数 ${canonical} 与其别名 ${alternatives.join('/')} 冲突，请只传一种写法`);
+    }
+    next[canonical] = canonical === 'key' ? (canonicalKey(args[supplied[0]]) || args[supplied[0]]) : args[supplied[0]];
+    for (const field of alternatives) delete next[field];
+  }
+  return next;
+}
+
+function normalizeWakeArguments(config) {
+  const next = { ...config };
+  if (next.mode !== undefined) {
+    const mode = String(next.mode).trim().toLowerCase();
+    if (['diving', 'silent', 'quiet', 'sleep', 'normal', '潜水', '安静', '正常'].includes(mode)) next.mode = 'diving';
+    else if (['active', 'chat', 'talking', '活跃'].includes(mode)) next.mode = 'active';
+    else throw new Error('mode 无效：请使用 diving（潜水/安静）或 active（活跃）');
+  }
+  if (next.triggers) {
+    const triggers = { ...next.triggers };
+    for (const field of ['keywords', 'keyword']) {
+      if (triggers[field] === undefined) continue;
+      if (typeof triggers[field] === 'boolean') {
+        throw new Error('keyword/keywords 需要关键词字符串或数组；不能用布尔值开启，保留原关键词时请省略该字段');
+      }
+      triggers[field] = (Array.isArray(triggers[field]) ? triggers[field] : triggers[field].split(/[,，、\s]+/))
+        .map((value) => String(value).trim()).filter(Boolean);
+    }
+    next.triggers = foldArgumentAliases(triggers, {
+      atMention: ['at'], nameMention: ['name'], keywords: ['keyword'], probability: ['prob']
+    });
+  }
+  return next;
+}
+
 {
-  const registerTool = server.tool.bind(server);
+  const registerTool = server.registerTool.bind(server);
   server.tool = (name, ...rest) => {
     const flag = TOOL_CONFIG_FLAGS[name];
     if (flag && cfg.socialV2?.tools?.[flag] === false) {
       disabledTools.push(`${name}(${flag})`);
       return undefined;
     }
-    return registerTool(name, ...rest);
+    // ── 会话绑定闸门（SELF_KEY）──────────────────────────────────────────────
+    //
+    // 在**统一注册点**包一层，而不是逐个改 31 个带 key 的工具 —— 逐改容易漏
+    // （新增工具时忘了加），而这里是所有工具必经之路。
+    //
+    // 判据是「参数表里**声明**了 key」，不是「运行时 arguments 里有没有 key」：
+    // 声明才是工具的身份，运行时 arguments 是模型可控的 —— 用它来判断
+    // 「该不该校验」等于让攻击者自己选考卷。
+    const schema = rest.length >= 2 ? rest[rest.length - 2] : undefined;
+    const handler = rest[rest.length - 1];
+    const shape = { ...schema };
+    const aliases = TOOL_ARGUMENT_ALIASES[name] || {};
+    const required = new Set();
+    for (const [canonical, alternatives] of Object.entries(aliases)) {
+      if (!schema[canonical].isOptional()) required.add(canonical);
+      shape[canonical] = schema[canonical].optional();
+      for (const alias of alternatives) shape[alias] = schema[canonical].optional().describe(`${canonical} 的别名；请只使用一种写法`);
+    }
+    const guarded = async (args, ...tail) => {
+      let canonicalArgs;
+      try { canonicalArgs = foldArgumentAliases(args, aliases, required); }
+      catch (error) { return { content: [{ type: 'text', text: `参数错误：${error.message}` }], isError: true }; }
+      if (Object.prototype.hasOwnProperty.call(schema, 'key')) {
+        const denial = selfKeyGuard(canonicalArgs?.key);
+        if (denial) {
+          return { content: [{ type: 'text', text: denial }], isError: true };
+        }
+      }
+      return handler(canonicalArgs, ...tail);
+    };
+    // 旧 tool(rawShape) 的默认策略是 strip；改用公开注册接口保留 strict，未知键明确失败。
+    return registerTool(name, { description: rest[0], inputSchema: z.object(shape).strict() }, guarded);
   };
 }
 
@@ -273,6 +516,37 @@ server.tool(
   }
 );
 
+// ── 旧只读工具：**按启动时的桥接模式决定是否注册** ─────────────────────────
+//
+// 为什么必须在注册期就砍掉（而不是只在调用期 403）：
+//   每个工具的描述 + 参数 schema 都随 system prompt 在**每一次**请求里重发。
+//   实测一份 reserved2 会话的请求头是「58 个工具 / 45.5 KB schema（≈14k token/次）」，
+//   其中 3 个旧只读工具在 reserved2 下**必然**返回 403，却照样占着 2500+ 字节；
+//   更要命的是它们会诱导模型误调（实测 turn10 有一次 qq_get_group_members → 403，白烧一步）。
+//   本文件开头（TOOL_CONFIG_FLAGS 那段）已经为「关掉的工具」立过同样的规矩，这里补齐模式维度。
+//
+// 语义：旧只读工具没有会话令牌，`legacyReadToolAllowed()` 只放行 closed-agent。
+//   所以只有在 closed-agent 下注册它们才有意义。探测失败（读不到状态文件）时按「注册」处理：
+//   那种情况下所有 QQ 工具都不可用，少注册只会让模型看到更少的失败路径，不必激进。
+//
+// ⚠️ 为什么读 `state/mode.json` 而**不**去问 `/api/status`：
+//   注册发生在模块加载期，走网络就得用 top-level await；而本文件会被若干离线回归
+//   （test-audit-security-mcp.mjs）用 `vm`/`new Function` 求值，那里没有 TLA —— 会直接
+//   `ReferenceError: await is not defined`，把整批断言打红。模式文件是桥接每次切换模式时
+//   原子写出的（bridge.js 的 writeMode），与 `/api/status` 同源，读盘既准确又是同步的。
+const bootBridgeMode = (() => {
+  try {
+    const raw = fs.readFileSync(path.join(ROOT, 'state', 'mode.json'), 'utf8');
+    const parsed = JSON.parse(raw);
+    return String(parsed?.mode ?? '').trim();
+  } catch { return ''; }
+})();
+const registerLegacyReadTools = bootBridgeMode === '' || bootBridgeMode === 'closed-agent';
+if (!registerLegacyReadTools) {
+  console.error(`[snowluma-safe] 当前桥接模式 ${bootBridgeMode}：不注册旧只读工具（qq_list_groups / qq_get_group_history），改用带令牌的 v2 读工具`);
+}
+
+if (registerLegacyReadTools) {
 server.tool(
   'qq_list_groups',
   '列出机器人所在的全部 QQ 群（只读）：群号、群名。',
@@ -299,34 +573,36 @@ server.tool(
     }
   }
 );
+}
 
+// 群成员列表：**换成 v2 形态**（key + token）。
+//
+// 为什么不再沿用旧的无令牌版本：它是 qq-chat-v2 预设里唯一被点名的"拿 QQ 号"的途径
+// （见 dsh/agent-presets/qq-chat-v2/agent.cordis.yml 第 6 条），但旧版在 reserved2 下必然 403
+// —— 预设教模型用一个永远失败的工具，等于每次都白烧一步。改成 v2 后同一个名字在两种模式下都成立。
 server.tool(
   'qq_get_group_members',
-  '列出指定群的成员列表（只读）：QQ 号、昵称、群名片。',
-  { groupId: z.union([z.number(), z.string()]).describe('群号') },
-  async ({ groupId }) => {
-    const g = String(groupId);
+  '列出指定群的成员（只读）：QQ 号、昵称、群名片。等特定的人、要 @ 某个人、或需要确认谁在群里时用；QQ 号取返回里的 userId。只返回白名单群，且只读取桥接允许的会话。',
+  {
+    key: z.string().describe('会话 key，格式 group:群号'),
+    token: z.string().optional().describe('会话令牌（见唤醒提示中的【会话令牌】；closed-agent 模式不需要）'),
+    limit: z.number().optional().describe('最多返回多少成员，默认 50，最大 100')
+  },
+  async ({ key, token, limit }) => {
     try {
-      if (!(await legacyReadToolAllowed())) {
-        return { content: [{ type: 'text', text: '旧只读工具仅在封闭 agent（管理员私聊）模式可用；其它模式请使用带会话令牌的 v2 读工具' }], isError: true };
-      }
+      const q = new URLSearchParams({ key });
+      if (limit != null) q.set('limit', String(limit));
+      // token 可选：closed-agent（管理员私聊）里代理没有会话令牌，走的是操作者路径；
+      // 桥接那边的白名单/模式判定对**这条**请求同样生效（不依赖 header 是否存在）。
+      const data = await agentApi(`/api/socialV2/group-members?${q.toString()}`, token ? { headers: { 'x-agent-token': token } } : {});
+      return { content: [{ type: 'text', text: serializeModelData(data) }] };
     } catch (error) {
-      return { content: [{ type: 'text', text: `无法确认当前模式，拒绝读取：${error?.message ?? error}` }], isError: true };
-    }
-    const a = getAccess();
-    if (!isAllowed(a.allowGroups, a.denyGroups, g, a.allowAllWhenEmpty)) {
-      return { content: [{ type: 'text', text: `拒绝：群 ${g} 不在只读白名单中` }], isError: true };
-    }
-    try {
-      const data = await onebot('get_group_member_list', { group_id: Number(g) });
-      const list = (Array.isArray(data) ? data : (data?.data ?? [])).map((m) => ({ user_id: m.user_id, nickname: m.nickname, card: m.card }));
-      return { content: [{ type: 'text', text: serializeModelData(list) }] };
-    } catch (error) {
-      return { content: [{ type: 'text', text: `查询失败：${error?.message ?? error}` }], isError: true };
+      return { content: [{ type: 'text', text: `获取群成员失败：${error?.message ?? error}` }], isError: true };
     }
   }
 );
 
+if (registerLegacyReadTools) {
 server.tool(
   'qq_get_group_history',
   '获取指定群的最近消息历史（只读）。messageSeq 可选：从该消息序号往前取。注意：是否可用取决于 SnowLuma 是否实现 get_group_msg_history。',
@@ -354,6 +630,7 @@ server.tool(
     }
   }
 );
+}
 
 server.tool(
   'qq_send_group_message',
@@ -553,7 +830,7 @@ server.tool(
     token: z.string().describe('会话令牌（见唤醒提示中的【会话令牌】）'),
     throughSeq: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional().describe('可同时确认已读：使用已查看结果中的 readThroughSeq，省去额外 qq_mark_read；不传则只设置唤醒配置。若 markRead 工具被关闭，该水位会被忽略，本工具只设置唤醒配置'),
     config: z.object({
-      mode: z.enum(['diving', 'active']).optional().describe('diving=潜水，active=活跃（anyMessage 开启）'),
+      mode: z.string().optional().describe('diving=潜水，active=活跃；兼容 silent/quiet/sleep/normal/潜水/安静/正常 表示 diving'),
       infinite: z.boolean().optional().describe('true=无限期，只有条件命中才唤醒；false=有限时间'),
       sleepMs: z.number().optional().describe('有限潜水毫秒数（从当前时间起算）'),
       sleepUntil: z.string().optional().describe('有限潜水截止时间 ISO 字符串，优先级高于 sleepMs'),
@@ -561,18 +838,23 @@ server.tool(
         atMention: z.boolean().optional().describe('被 @ 或引用自己时唤醒'),
         nameMention: z.boolean().optional().describe('被叫名字/昵称时唤醒'),
         speakerIds: z.array(z.union([z.number(), z.string()])).max(20).optional().describe('指定群友 QQ 号数组：这些群友中任意一位发言时唤醒（可选，最多 20 个，不设置则不启用；私聊不适用，设置会被桥接清除；可从 qq_get_active_members / qq_get_group_members / qq_get_message_detail 的 userId/user_id 获取）'),
-        keywords: z.array(z.string()).optional().describe('出现任意关键词时唤醒'),
+        keywords: z.union([z.array(z.union([z.string(), z.number()])), z.string()]).optional().describe('出现任意关键词时唤醒；可传数组或逗号/顿号/空白分隔的字符串'),
         question: z.boolean().optional().describe('被直接提问/点名挑战时唤醒'),
         poke: z.boolean().optional().describe('有人拍一拍时唤醒（群聊包括拍你和拍别人，私聊为对方拍你）'),
         anyMessage: z.boolean().optional().describe('任意新消息都唤醒（活跃模式）'),
-        probability: z.number().optional().describe('普通消息按该概率随机唤醒（0~1）')
-      }).optional(),
+        probability: z.number().optional().describe('普通消息按该概率随机唤醒（0~1）'),
+        at: z.boolean().optional().describe('atMention 的别名'),
+        name: z.boolean().optional().describe('nameMention 的别名'),
+        keyword: z.union([z.array(z.union([z.string(), z.number()])), z.string(), z.boolean()]).optional().describe('keywords 的别名，需要具体关键词；布尔值会明确拒绝'),
+        prob: z.number().optional().describe('probability 的别名')
+      }).strict().optional(),
       batchWindowMs: z.number().optional().describe('多条消息合并唤醒窗口（毫秒，>=1000）')
-    }).describe('要设置的唤醒配置，缺省字段保留原值')
+    }).strict().describe('要设置的唤醒配置，缺省字段保留原值；未知字段会明确报错')
   },
   async ({ key, token, config, throughSeq }) => {
     try {
-      const data = await agentApi('/api/socialV2/wake-config', { method: 'POST', body: JSON.stringify({ key, config, throughSeq }), headers: { 'x-agent-token': token } });
+      const canonicalConfig = normalizeWakeArguments(config);
+      const data = await agentApi('/api/socialV2/wake-config', { method: 'POST', body: JSON.stringify({ key, config: canonicalConfig, throughSeq }), headers: { 'x-agent-token': token } });
       return { content: [{ type: 'text', text: serializeModelData(data) }] };
     } catch (error) {
       return { content: [{ type: 'text', text: `设置唤醒配置失败：${error?.message ?? error}` }], isError: true };
@@ -612,7 +894,7 @@ server.tool(
 
 server.tool(
   'qq_send_burst',
-  '在指定 QQ 群分多条发送消息（二代仿真模式专用），桥接会按真人化随机间隔发送。暂不支持引用，需要引用请用 qq_reply。注意：数组里的每个字符串就是一条 QQ 消息，字符串内部不要用空格分隔中文短句，需要多条请用数组元素；每条消息要读起来完整，不要把同一句话拆到两条里。消息里可以直接写 [狗头]/[汪汪]/[doge]/[傲娇]/[捂脸]/[笑哭]/[吃瓜]/[赞]/[白眼]/[委屈]/[崇拜]/[菜狗] 等标记（注意：狗头=汪汪脸 277，doge=傲娇脸 179；基本覆盖 QQ 小黄脸，也支持 [表情:名称] 写法），桥接会转成 QQ 原生表情；不要每条都用：短句/情绪明显时 1 个，偶尔 2 个，长段落最多 1 个或不用。',
+  '在指定 QQ 群分多条发送消息（二代仿真模式专用），桥接会按真人化随机间隔发送。暂不支持引用，需要引用请用 qq_reply。注意：数组里的每个字符串就是一条 QQ 消息，字符串内部不要用空格分隔中文短句，需要多条请用数组元素；每条消息要读起来完整，不要把同一句话拆到两条里。消息里可以直接写 [狗头]/[doge]/[狗头保命]/[傲娇]/[捂脸]/[笑哭]/[吃瓜]/[赞]/[白眼]/[委屈]/[崇拜]/[菜狗] 等标记（注意：狗头/doge/狗头保命=277，傲娇=179；277 是狗头，表示玩笑调侃，不是狗叫；基本覆盖 QQ 小黄脸，也支持 [表情:名称] 写法），桥接会转成 QQ 原生表情；不要每条都用：短句/情绪明显时 1 个，偶尔 2 个，长段落最多 1 个或不用。',
   {
     groupId: z.union([z.number(), z.string()]).describe('群号（必须在白名单内）'),
     token: z.string().describe('会话令牌（见唤醒提示中的【会话令牌】）'),
@@ -654,7 +936,7 @@ server.tool(
 
 server.tool(
   'qq_send_message',
-  '统一发送工具：可发一条或多条，可引用某条消息，可自定义/按字数计算条间时间差。二代仿真模式专用。注意：字符串=一条消息，数组=多条消息；每个字符串内部不要用空格分隔中文短句，需要多条请用数组元素；每条消息要读起来完整，不要把同一句话拆到两条里。消息里可以直接写 [狗头]/[汪汪]/[doge]/[傲娇]/[捂脸]/[笑哭]/[吃瓜]/[赞]/[白眼]/[委屈]/[崇拜]/[菜狗] 等标记（注意：狗头=汪汪脸 277，doge=傲娇脸 179；基本覆盖 QQ 小黄脸，也支持 [表情:名称] 写法），桥接会转成 QQ 原生表情；不要每条都用：短句/情绪明显时 1 个，偶尔 2 个，长段落最多 1 个或不用。只有以下情况才需要传 replyToMessageId 引用：① 你这条消息指向的人或消息并非最新一条别人的消息（也就是你在回更早的某条）；② 你连续几句话里不同消息指代的是不同的消息或不同的人。其他情况（上下文唯一、刚在接同一条最新消息）不要引用，别让对方猜，也别为了用工具而用。',
+  '统一发送工具：可发一条或多条，可引用某条消息，可自定义/按字数计算条间时间差。二代仿真模式专用。注意：字符串=一条消息，数组=多条消息；每个字符串内部不要用空格分隔中文短句，需要多条请用数组元素；每条消息要读起来完整，不要把同一句话拆到两条里。消息里可以直接写 [狗头]/[doge]/[狗头保命]/[傲娇]/[捂脸]/[笑哭]/[吃瓜]/[赞]/[白眼]/[委屈]/[崇拜]/[菜狗] 等标记（注意：狗头/doge/狗头保命=277，傲娇=179；277 是狗头，表示玩笑调侃，不是狗叫；基本覆盖 QQ 小黄脸，也支持 [表情:名称] 写法），桥接会转成 QQ 原生表情；不要每条都用：短句/情绪明显时 1 个，偶尔 2 个，长段落最多 1 个或不用。只有以下情况才需要传 replyToMessageId 引用：① 你这条消息指向的人或消息并非最新一条别人的消息（也就是你在回更早的某条）；② 你连续几句话里不同消息指代的是不同的消息或不同的人。其他情况（上下文唯一、刚在接同一条最新消息）不要引用，别让对方猜，也别为了用工具而用。',
   {
     key: z.string().describe('会话 key，格式 group:群号 或 private:QQ号'),
     token: z.string().describe('会话令牌（见唤醒提示中的【会话令牌】）'),
@@ -725,7 +1007,7 @@ if (cfg.socialV2?.tools?.sendPoke !== false) {
 
 server.tool(
   'qq_wait_for_messages',
-  '等待分两种用途。首答前已读消息、只想确认有没有补充：用 purpose="reply"，按最后来信时间补足 quietMs 静默，已安静足够就立即返回；读取/思考时新到的消息也会返回，新消息重算静默。timeoutMs 是最长预算，不要求等满；预算到但 quiet=false 不代表对方已说完。此用途绝不代替沉睡前观察。等对方继续说、等回复或睡前观察：用默认 purpose="messages"；先等新消息，收到后才按 quietMs 等静默，没有新消息会等到 timeoutMs，单传 quietMs 不会缩短总等待。静默下限由后台配置，默认 10000ms。直接看 newMessages、unreadCount 和 readThroughSeq，返回消息无需重复查询；仍有未展示未读才补读。决定潜水/收尾时才用默认用途加 timeoutMs=300000 完成沉睡前观察，不能把 5 分钟观察放在首答之前；短等待不能代替。全程无人说话返回 preSleepWaitSatisfied=true；观察期间来了新消息返回 preSleepWaitObserved=true，读后不需参与可收尾，参与回复则下次收尾重新观察。preSleepWaitRemainingMs 仅供准备收尾时参考。',
+  '等待分两种用途。首答前已读消息、只想确认有没有补充：用 purpose="reply"，按最后来信时间补足 quietMs 静默，已安静足够就立即返回；读取/思考时新到的消息也会返回，新消息重算静默。timeoutMs 是最长预算，不要求等满；预算到但 quiet=false 不代表对方已说完。此用途绝不代替沉睡前观察。等对方继续说、等回复或睡前观察：用默认 purpose="messages"；先等新消息，收到后才按 quietMs 等静默，没有新消息会等到 timeoutMs，单传 quietMs 不会缩短总等待。静默下限由后台配置，默认 10000ms。**返回里的 canSleepNow / countsAsObservation / hint 直接告诉你现在能不能收尾、该用多大的 timeoutMs——照它做，不要反复试**：canSleepNow=true 就可以直接 mark_read / set_wake_config；false 时按 hint 给的 timeoutMs 一次等满（更短的等待不算沉睡前观察，满足不了闸门）。直接看 newMessages、unreadCount 和 readThroughSeq，返回消息无需重复查询；仍有未展示未读才补读。决定潜水/收尾时才用默认用途加 timeoutMs=300000 完成沉睡前观察，不能把 5 分钟观察放在首答之前；短等待不能代替。全程无人说话返回 preSleepWaitSatisfied=true；观察期间来了新消息返回 preSleepWaitObserved=true，读后不需参与可收尾，参与回复则下次收尾重新观察。',
   {
     key: z.string().describe('会话 key，格式 group:群号 或 private:QQ号'),
     token: z.string().describe('会话令牌（见唤醒提示中的【会话令牌】）'),
@@ -734,13 +1016,16 @@ server.tool(
     minNewMessages: z.number().optional().describe('仅 messages 用途：至少等到多少条新消息才进入静默窗口，默认 1；reply 用途会忽略它'),
     quietMs: z.number().optional().describe('静默窗口毫秒数，建议 10000~12000；reply 从最后来信开始计时，messages 只在等到新消息后计时；后台默认至少 10000')
   },
-  async ({ key, token, purpose, timeoutMs, minNewMessages, quietMs }) => {
+  async ({ key, token, purpose, timeoutMs, minNewMessages, quietMs }, extra) => {
     try {
-      const data = await agentApi('/api/socialV2/wait', {
+      // 必须走长轮询通道：全局 fetch（undici）有 300s headersTimeout，
+      // 而沉睡前观察的预算就是 300s（见 agentApiLongPoll 的说明）。
+      const data = await agentApiLongPoll('/api/socialV2/wait', {
         method: 'POST',
+        signal: extra?.signal,
         body: JSON.stringify({ key, purpose, timeoutMs, minNewMessages, quietMs }),
         headers: { 'x-agent-token': token },
-        timeoutMs: Math.min(725000, (Number(timeoutMs) || 30000) + Math.max(Number(quietMs) || 0, 10000) + 20000)
+        timeoutMs: longPollClientBudget(timeoutMs)
       });
       return { content: [{ type: 'text', text: serializeModelData(data) }] };
     } catch (error) {
@@ -970,7 +1255,7 @@ server.tool(
 if (cfg.socialV2?.tools?.getImages !== false) {
   server.tool(
     'qq_get_message_images',
-    '获取指定 QQ 消息中的图片/表情，并直接以图像内容返回给模型（视觉模型可“看懂”）。当消息文本里出现 [图片]、[表情] 或 hasMedia=true 时调用。支持一条消息里的多张图片/表情；二代模式下必须携带会话令牌。',
+    '获取指定 QQ 消息中的图片/表情，并直接以图像内容返回给模型（视觉模型可“看懂”）。当消息文本里出现 [图片]、[表情] 或 hasMedia=true 时调用。支持一条消息里的多张图片/表情；二代模式下必须携带会话令牌。**动图（GIF/动态表情）会被桥接抽帧拼成多格图再给你**：说明里会写「动图 N 帧/…s，已抽 X 帧拼成 A×B 网格，行优先 左上→右下」——按格子顺序理解动作即可，不要把它当成一张九宫格照片；没有这类说明就是静态图。体积过大的图会被自动缩放/重编码，说明里会给出原始尺寸与体积；如果真的压不到可用体积，返回里会直接写明原因（例如「超过上限」），此时如实告诉对方你看不到，不要编造画面。',
     {
       key: z.string().describe('会话 key，格式 group:群号 或 private:QQ号'),
       messageId: z.union([z.number(), z.string()]).describe('要查看的消息 id（QQ 消息 id 可为负数；二代也可用本地 seq）'),
@@ -1076,7 +1361,7 @@ if (cfg.socialV2?.sticker?.enabled !== false && cfg.socialV2?.tools?.listSticker
 if (cfg.socialV2?.sticker?.enabled !== false && cfg.socialV2?.tools?.getStickerImage !== false) {
   server.tool(
     'qq_get_sticker_image',
-    '获取指定收藏表情的图片内容并直接以图像返回给模型（视觉模型可“看懂”）。当 qq_list_stickers 返回的表情 desc/localNote 为空、或你想确认表情实际长什么样时调用。stickerId 可用 qq_list_stickers 返回的 id / md5 / url。',
+    '获取指定收藏表情的图片内容并直接以图像返回给模型（视觉模型可“看懂”）。当 qq_list_stickers 返回的表情 desc/localNote 为空、或你想确认表情实际长什么样时调用。stickerId 可用 qq_list_stickers 返回的 id / md5 / url。动图表情会被抽帧拼成多格图（行优先：左上→右下），说明里会写帧数与网格尺寸；体积过大时会自动缩放，说明里会给出原始尺寸。',
     {
       key: z.string().describe('会话 key，格式 group:群号 或 private:QQ号'),
       token: z.string().describe('会话令牌（见唤醒提示中的【会话令牌】）'),
@@ -1087,10 +1372,10 @@ if (cfg.socialV2?.sticker?.enabled !== false && cfg.socialV2?.tools?.getStickerI
         const q = new URLSearchParams({ key, stickerId: String(stickerId) });
         const data = await agentApi(`/api/socialV2/sticker-image?${q.toString()}`, { headers: { 'x-agent-token': token }, timeoutMs: 180000 });
         if (!data?.image?.data || !data?.image?.mimeType) {
-          return { content: [{ type: 'text', text: `表情没有可返回的图片：${data?.error || '未知'}` }], isError: true };
+          return { content: [{ type: 'text', text: `表情没有可返回的图片：${errorText(data?.error, '未知')}` }], isError: true };
         }
         const content = [
-          { type: 'text', text: `表情 ${data.sticker?.id || stickerId}${data.sticker?.desc ? '（备注：' + data.sticker.desc + '）' : ''} 的图片内容：` },
+          { type: 'text', text: `表情 ${data.sticker?.id || stickerId}${data.sticker?.desc ? '（备注：' + data.sticker.desc + '）' : ''} 的图片内容：${data.note ? '（' + data.note + '）' : ''}` },
           { type: 'image', mimeType: data.image.mimeType, data: data.image.data }
         ];
         return { content };
@@ -1215,25 +1500,26 @@ if (cfg.socialV2?.voice?.enabled !== false && cfg.socialV2?.tools?.sendVoice !==
 if (cfg.socialV2?.voice?.ttsEnabled !== false) {
   server.tool(
     'qq_speak',
-    '把你想说的话用 TTS 合成一条 QQ 语音条发出去。text 1~200 字，写口语、短一点。语音用于：对方明确要求、对方连续发语音（消息带 [语音]）、撒娇/晚安/难过时；普通闲聊用文字。同一回合最多 3 条；连发 2-3 条时用 qq_speak_burst；语音之间不插文字，全部发完后可用 afterText 补一条文字。文字/语音到每分钟 6 条上限就停约 2 分钟再继续（期间用文字）。style 按语境选：' + VOICE_STYLE_HINT + '。带 [语音] 只是告诉你对方用了语音，别复述“你刚才说”，直接接内容。发送失败/额度用完时返回会明确写“语音失败，请用文字回复”——这时必须改用 qq_send_message / qq_reply 发文字，不要把失败或报错告诉对方。',
+    '把你想说的话用 TTS 合成一条 QQ 语音条发出去。text 1~200 字，写口语、短一点。语音用于：对方明确要求、对方连续发语音（消息带 [语音]）、撒娇/晚安/难过时；普通闲聊用文字。同一回合最多 3 条；连发 2-3 条时用 qq_speak_burst；语音之间不插文字，全部发完后可用 afterText 补一条文字。文字/语音到每分钟 6 条上限就停约 2 分钟再继续（期间用文字）。style 按语境选：' + VOICE_STYLE_HINT + '。带 [语音] 只是告诉你对方用了语音，别复述“你刚才说”，直接接内容。发送失败/额度用完时返回会明确写“语音失败，请用文字回复”——这时必须改用 qq_send_message / qq_reply 发文字，不要把失败或报错告诉对方。' + VOICE_EXPRESSION_HINT,
     {
       key: z.string().describe('会话 key，格式 group:群号 或 private:QQ号'),
       token: z.string().describe('会话令牌（见唤醒提示中的【会话令牌】）'),
-      text: z.string().describe('要说的内容，1~200 字，口语化短句；超过 200 字会被拒绝'),
-      style: z.enum(VOICE_STYLE_IDS).optional().describe(`按语境选语气（${VOICE_STYLE_HINT}）；不传=daily`)
+      text: z.string().describe('口语化短句，正文1~200字；允许的情感标签不计正文，含标签总长最多400字'),
+      style: z.enum(VOICE_STYLE_IDS).optional().describe(`按语境选语气（${VOICE_STYLE_HINT}）；不传=daily`),
+      intensity: z.enum(['subtle', 'normal', 'strong']).optional().describe('情绪强度，默认subtle轻微；normal适中，strong明显但不喊叫')
     },
-    async ({ key, token, text, style }) => {
+    async ({ key, token, text, style, intensity }) => {
       try {
         const content = String(text ?? '').trim();
         if (!content) {
           return { content: [{ type: 'text', text: 'text 不能为空' }], isError: true };
         }
-        if ([...content].length > 200) {
-          return { content: [{ type: 'text', text: '太长了，说短点（最多 200 字）' }], isError: true };
+        if ([...content].length > 400) {
+          return { content: [{ type: 'text', text: '含标签的语音文本最多400字，正文最多200字' }], isError: true };
         }
         const data = await agentApi('/api/socialV2/speak', {
           method: 'POST',
-          body: JSON.stringify({ key, text: content, token, style }),
+          body: JSON.stringify({ key, text: content, token, style, intensity }),
           headers: { 'x-agent-token': token },
           timeoutMs: 120000
         });
@@ -1248,15 +1534,16 @@ if (cfg.socialV2?.voice?.ttsEnabled !== false) {
 
   server.tool(
     'qq_speak_burst',
-    '一次发 1~3 条 QQ 语音，像真人连发。语音之间只留 1.2 秒间隔，不插文字。全部语音发完后，如果还有没说完的，用 afterText 顺着同一条思路接着说完；语音已经说完整就不要传 afterText。afterText 不是收尾通知，禁止“我说完了/我讲完了/你继续/轮到你了”这类元话语。用于连续表达/语音聊天；普通闲聊用文字。style 对这批语音统一生效；想每条不同语气就分别调用 qq_speak。文字/语音到每分钟 6 条上限就停约 2 分钟再继续。失败返回里会带已发送条数 sent，不要重发已成功的语音；发送失败/额度用完时改用文字，不要把失败或额度告诉对方。',
+    '一次发 1~3 条 QQ 语音，像真人连发。语音之间只留 1.2 秒间隔，不插文字。全部语音发完后，如果还有没说完的，用 afterText 顺着同一条思路接着说完；语音已经说完整就不要传 afterText。afterText 不是收尾通知，禁止“我说完了/我讲完了/你继续/轮到你了”这类元话语。用于连续表达/语音聊天；普通闲聊用文字。style 对这批语音统一生效；想每条不同语气就分别调用 qq_speak。文字/语音到每分钟 6 条上限就停约 2 分钟再继续。失败返回里会带已发送条数 sent，不要重发已成功的语音；发送失败/额度用完时改用文字，不要把失败或额度告诉对方。' + VOICE_EXPRESSION_HINT,
     {
       key: z.string().describe('会话 key，格式 group:群号 或 private:QQ号'),
       token: z.string().describe('会话令牌（见唤醒提示中的【会话令牌】）'),
-      texts: z.array(z.string()).min(1).max(3).describe('1~3 条语音文本，每条 1~200 字，口语化短句'),
+      texts: z.array(z.string()).min(1).max(3).describe('1~3条语音，每条正文1~200字、含标签最多400字，口语化短句'),
       afterText: z.string().optional().describe('可选：全部语音后继续同一条思路的文字（不是收尾通知；语音已说完整就不要传；不要写“我说完了/你继续”）'),
-      style: z.enum(VOICE_STYLE_IDS).optional().describe(`按语境选语气（${VOICE_STYLE_HINT}）；不传=daily`)
+      style: z.enum(VOICE_STYLE_IDS).optional().describe(`按语境选语气（${VOICE_STYLE_HINT}）；不传=daily`),
+      intensity: z.enum(['subtle', 'normal', 'strong']).optional().describe('情绪强度，默认subtle轻微；normal适中，strong明显但不喊叫')
     },
-    async ({ key, token, texts, style, afterText }) => {
+    async ({ key, token, texts, style, intensity, afterText }) => {
       try {
         const list = (Array.isArray(texts) ? texts : []).map((t) => String(t ?? '').trim()).filter(Boolean);
         if (!list.length) return { content: [{ type: 'text', text: 'texts 不能为空' }], isError: true };
@@ -1264,7 +1551,7 @@ if (cfg.socialV2?.voice?.ttsEnabled !== false) {
         const tail = String(afterText ?? '').trim();
         if (tail && [...tail].length > 200) return { content: [{ type: 'text', text: 'afterText 超过 200 字' }], isError: true };
         for (const t of list) {
-          if ([...t].length > 200) return { content: [{ type: 'text', text: '有一条语音文本超过 200 字' }], isError: true };
+          if ([...t].length > 400) return { content: [{ type: 'text', text: '有一条含标签的语音文本超过400字，正文最多200字' }], isError: true };
         }
         const results = [];
         for (let i = 0; i < list.length; i++) {
@@ -1272,7 +1559,7 @@ if (cfg.socialV2?.voice?.ttsEnabled !== false) {
           try {
             const data = await agentApi('/api/socialV2/speak', {
               method: 'POST',
-              body: JSON.stringify({ key, text, token, style }),
+              body: JSON.stringify({ key, text, token, style, intensity }),
               headers: { 'x-agent-token': token },
               timeoutMs: 120000
             });
@@ -1364,7 +1651,7 @@ if (cfg.socialV2?.tools?.getSelfImage !== false) {
         const q = new URLSearchParams({ key });
         const data = await agentApi(`/api/socialV2/self-image?${q.toString()}`, { headers: { 'x-agent-token': token } });
         if (!data?.image?.data || !data?.image?.mimeType) {
-          return { content: [{ type: 'text', text: `没有可返回的形象图片：${data?.error || '未知'}` }], isError: true };
+          return { content: [{ type: 'text', text: `没有可返回的形象图片：${errorText(data?.error, '未知')}` }], isError: true };
         }
         return {
           content: [

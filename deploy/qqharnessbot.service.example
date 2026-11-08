@@ -1,0 +1,17 @@
+[Unit]
+Description=QQHarnessBot
+After=network.target
+
+[Service]
+Type=simple
+User=qqbot
+WorkingDirectory=/opt/QQHarnessBot
+EnvironmentFile=/etc/qqharnessbot.env
+ExecStart=/usr/bin/node src/bridge.js
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

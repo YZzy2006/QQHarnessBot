@@ -19,9 +19,9 @@
 [![License](https://img.shields.io/badge/License-MIT-64748B?style=flat-square)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/YZzy2006/QQHarnessBot?style=flat-square&color=EAB308)](https://github.com/YZzy2006/QQHarnessBot/stargazers)
 
-**角色与记忆 · 主动互动 · 生活工具 · 中文控制台**
+**角色与记忆 · 主动互动 · 视频体验 · 轻量工作台**
 
-[快速开始](#quick-start) · [功能总览](#features) · [使用文档](#documentation) · [提交反馈](https://github.com/YZzy2006/QQHarnessBot/issues)
+[快速开始](#quick-start) · [开发者部署](README_DEVELOPER.md) · [AI部署](README_AI.md) · [配置地图](docs/CONFIGURATION.md) · [工作台](https://github.com/YZzy2006/QQHarnessWorkbench) · [提交反馈](https://github.com/YZzy2006/QQHarnessBot/issues)
 
 </div>
 
@@ -36,7 +36,9 @@
 | 看看它有哪些能力 | [功能总览](#features) |
 | 了解消息如何流转 | [系统架构](#architecture) |
 | 在自己的电脑或服务器运行 | [快速开始](#quick-start) |
-| 配置模型、天气、搜索和语音 | [可选服务](#services) |
+| 配置聊天模型、天气、定位、语音和视频 | [配置地图](docs/CONFIGURATION.md) |
+| 按步骤部署或交给AI部署 | [开发者手册](README_DEVELOPER.md) · [AI执行手册](README_AI.md) |
+| 从手机和电脑管理机器人 | [QQHarnessWorkbench](https://github.com/YZzy2006/QQHarnessWorkbench) |
 | 找具体指令与使用方法 | [中文文档](#documentation) |
 | 参与开发或了解数据边界 | [开发与验证](#development) · [隐私与权限](#privacy) |
 
@@ -75,11 +77,11 @@
 天气、地点的连续追问按**本人 + 当前会话**隔离。普通查询只读，位置卡片需明确发送；实际来源、额度及失败原因以工具结果为准。
 
 <details>
-<summary><strong>🧪 下一批更新：资料工具与媒体体验（公开仓库尚未发布）</strong></summary>
+<summary><strong>🎬 已收录：资料工具、视频体验与工作台</strong></summary>
 
 <br/>
 
-以下能力已在开发版本实现，相关源码尚未推送至当前公开版本；从本仓库默认分支安装时，请以实际代码为准。
+本次更新已收录以下实现及对应测试。可选服务需要自己的账号、依赖和配置；源码具备相应入口不等于所有外部账号已验收。
 
 | 能力 | 开发版本中的行为 |
 | --- | --- |
@@ -91,6 +93,9 @@
 | 连续改图 | 参考原图与当前版本编辑，支持上一版和回到原图 |
 | 对话式工具 | 常用自然表达映射到受限工具，写操作仍需确认 |
 | 图文结果 | 较长工具结果可渲染成 PNG 卡片，并取回文字原文 |
+| B站与视频记录 | 当前人物卡选片、采样与字幕追问、72小时资料保留；QQ分享使用标题/封面/链接 |
+| 轻量工作台 | 日记、人设、动态、视频、记忆安排、反馈、服务器状态与结构化操作 |
+| 表情语义 | doge/狗头保命与傲娇分开映射、入站按真实ID解释 |
 
 平台分享受登录、地区、风控和页面变动影响；无法取得实际视频时应提示上传原视频，不能只凭标题声称理解内容。这里的视频能力指消息附件与链接分析。
 
@@ -107,6 +112,7 @@ flowchart LR
     BOT <--> DSH[DeepSeek Harness]
     DSH <--> MODEL[你配置的模型服务]
     BOT <--> CONSOLE[本地中文控制台]
+    BOT <--> WORKBENCH[轻量工作台 · 可选HTTPS入口]
     BOT <--> STATE[本机状态 / 角色 / 任务]
     BOT --> SERVICES[天气 / 地图 / 搜索 / 媒体服务]
     style BOT fill:#0f766e,stroke:#5eead4,color:#fff
@@ -122,7 +128,7 @@ flowchart LR
 | 数据与配置 | **本机 JSON / Markdown** | 配置、人物卡、会话和工具状态 |
 | 可选外部能力 | **天气 / 地图 / 搜索 / 语音 / 图像 API** | 按启用的功能连接对应供应商 |
 
-DSH 接入使用 Cookie 鉴权、斜杠 RPC 和事件流。当前适配来源为 **DSH 0.2.0-rc.2 代际**，具体上游变化仍可能需要适配。
+DSH 接入使用 Cookie 鉴权、斜杠 RPC 和事件流。当前代码适配 Cookie / RPC / remote.mux 协议代际；DSH 仍在迭代，实际兼容性以离线契约及你安装版本的验证为准，不承诺任意新版自动兼容。
 
 <a id="quick-start"></a>
 
@@ -229,6 +235,10 @@ node --env-file-if-exists=.env scripts/setup-dsh.mjs <profile>
 
 | 文档 | 适合什么时候看 |
 | --- | --- |
+| [开发者部署手册](README_DEVELOPER.md) | 安装、进程关系、账号与升级回滚 |
+| [AI部署执行手册](README_AI.md) | 授权边界、配置决策与逐项验收 |
+| [完整配置地图](docs/CONFIGURATION.md) | 聊天模型、天气、定位、语音、视频与工作台 |
+| [本次发布说明](docs/RELEASE-2026-11-08.md) | 已收录功能与实际验证边界 |
 | [管理员便捷指令](docs/OWNER-TOOLS-USAGE.md) | 任务、便签、查询、管理与操作确认 |
 | [天气、地点与陪伴](docs/COMPANION-USAGE.md) | 天气追问、地点卡片、纪念日与专注 |
 | [个人设置与扩展工具](docs/UTILITIES-USAGE.md) | 群知识、文件对比、截图待办与兴趣简报 |
@@ -265,6 +275,20 @@ QQHarnessBot/
 ```
 
 <a id="privacy"></a>
+
+## 📖 配套工作台
+
+[QQHarnessWorkbench](https://github.com/YZzy2006/QQHarnessWorkbench) 初始设为私有，需要仓库访问权限；主仓库已经保留相同的`public/workbench*`、`src/workbench-*`和`deploy/botwork`，没有另仓权限也可以部署匹配版本。
+
+在本仓库内运行网关：
+
+```bash
+cd deploy/botwork
+npm ci
+npm start
+```
+
+Nginx服务主仓库的`public/`（首页为`workbench.html`），API只反代到回环3188网关；完整的本地账号/Origin/配置/升级说明见[开发者教程](README_DEVELOPER.md)，反代模板见[工作台Nginx示例](deploy/nginx-workbench.conf.example)。不要启动第二份机器人。
 
 ## 🔐 把权限和数据边界说清楚
 

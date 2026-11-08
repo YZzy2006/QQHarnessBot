@@ -77,13 +77,12 @@ export async function silkToWav(silk) {
   return { wav: pcm16ToWav(pcm), durationMs: duration, pcm };
 }
 
-export async function transcribeWav(wav) {
-  const apiKey = process.env.BAILIAN_API_KEY || process.env.DASHSCOPE_API_KEY || '';
+export async function transcribeWav(wav,{fetchImpl=fetch,onUsage,apiKey=process.env.BAILIAN_API_KEY||process.env.DASHSCOPE_API_KEY||''}={}) {
   if (!apiKey) throw new Error('未配置 BAILIAN_API_KEY');
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), VOICE_ASR_TIMEOUT_MS);
   try {
-    const res = await fetch('https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', {
+    const res = await fetchImpl('https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       signal: controller.signal,
@@ -103,12 +102,13 @@ export async function transcribeWav(wav) {
     if (!res.ok) throw new Error(`ASR HTTP ${res.status} ${raw.slice(0, 160)}`);
     let json;
     try { json = JSON.parse(raw); } catch { throw new Error(`ASR 返回非 JSON：${raw.slice(0, 160)}`); }
+    if(json.usage)onUsage?.(json.usage);
     const content = json?.choices?.[0]?.message?.content;
     const text = (typeof content === 'string'
       ? content
       : Array.isArray(content) ? content.map((p) => p?.text ?? '').join('') : ''
     ).trim();
-    if (!text) throw new Error('ASR 返回空文本');
+    if (!text) throw Object.assign(new Error('ASR 返回空文本'), { code: 'ASR_EMPTY_TRANSCRIPT' });
     return text;
   } finally {
     clearTimeout(timer);

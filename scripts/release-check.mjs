@@ -1,5 +1,6 @@
 // 发布门禁：只输出文件、行号和规则名，不输出命中内容或密钥片段。
 import fs from 'node:fs';
+import {createHash} from 'node:crypto';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
@@ -21,6 +22,8 @@ export function unsafePath(name) {
 }
 
 export function scanText(name,bytes) {
+  // Reviewed OFL font subset; exact hash and path only, all other binary content stays rejected.
+  if(name==='public/workbench-font.woff' && createHash('sha256').update(bytes).digest('hex')==='a58dbf99dc02a5c3b5407c60d1f5391d3760c538bc8695d6e37119846e08c034') return [];
   const problems=[];
   if(bytes.includes(0))return [{file:name,line:0,rule:'不允许未审查的二进制内容'}];
   let text;

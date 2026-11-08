@@ -15,8 +15,8 @@ function test(name, fn) {
   }
 }
 
-const G = 7000001;
-const U = 7770486;
+const G = 200000001;
+const U = 100000001;
 
 test('入群申请列表：三种叫法 + 无方括号', () => {
   for (const text of ['[入群申请]', '[入群请求]', '[加群申请]', '入群申请']) {
@@ -53,28 +53,28 @@ test('踢人：缺确认也 ok:true，但 confirmed:false', () => {
   const without = parseAdminCommand(`[踢人] [${G}] [${U}]`);
   assert.equal(without.ok, true);
   assert.equal(without.confirmed, false);
-  assert.deepEqual(parseAdminCommand('[踢人 7000001]'), { ok: false, error: 'missing-args', action: 'kick' });
+  assert.deepEqual(parseAdminCommand('[踢人 200000001]'), { ok: false, error: 'missing-args', action: 'kick' });
 });
 
 test('群名/好友名：分段写法保留空格', () => {
-  const kick = parseAdminCommand('[踢人][测试 群聊][示例好友甲][确认]');
+  const kick = parseAdminCommand('[踢人][测试 群聊][测试联系人][确认]');
   assert.equal(kick.ok, true);
   assert.equal(kick.groupText, '测试 群聊');
-  assert.equal(kick.userText, '示例好友甲');
+  assert.equal(kick.userText, '测试联系人');
   assert.equal(kick.confirmed, true);
 
   const sign = parseAdminCommand('[群签到][测试群聊]');
   assert.equal(sign.ok, true);
   assert.equal(sign.groupText, '测试群聊');
 
-  const del = parseAdminCommand('[删好友][示例好友甲][确认]');
+  const del = parseAdminCommand('[删好友][测试联系人][确认]');
   assert.equal(del.ok, true);
-  assert.equal(del.userText, '示例好友甲');
+  assert.equal(del.userText, '测试联系人');
   assert.equal(del.confirmed, true);
 
-  const title = parseAdminCommand('[群头衔][测试群聊][示例好友甲][摸鱼达人][确认]');
+  const title = parseAdminCommand('[群头衔][测试群聊][测试联系人][摸鱼达人][确认]');
   assert.equal(title.groupText, '测试群聊');
-  assert.equal(title.userText, '示例好友甲');
+  assert.equal(title.userText, '测试联系人');
   assert.equal(title.title, '摸鱼达人');
 });
 
@@ -107,7 +107,7 @@ test('解禁 / 全员禁言', () => {
 test('改名片/改群名：文本参数取剩余全部内容（含空格）', () => {
   const card = parseAdminCommand(`[改名片] [${G}] [${U}] [雨 中 之 约]`);
   assert.deepEqual(card, { ok: true, action: 'setCard', groupId: G, userId: U, card: '雨 中 之 约', confirmed: false });
-  assert.equal(parseAdminCommand(`改名片 ${G} ${U} 示例好友甲`).card, '示例好友甲');
+  assert.equal(parseAdminCommand(`改名片 ${G} ${U} 测试联系人`).card, '测试联系人');
   assert.equal(parseAdminCommand(`[改名片 ${G} ${U} 雨 中 之 约 确认]`).card, '雨 中 之 约');
   assert.equal(parseAdminCommand(`[改名片 ${G} ${U} 雨 中 之 约 确认]`).confirmed, true);
 
@@ -203,7 +203,7 @@ test('普通聊天不拦截', () => {
 });
 
 test('不抛异常：畸形输入', () => {
-  const bad = ['[', ']', '[]', '[踢人 、 、]', '[禁言 0 0 abc]', '[改名片 a b]', '【退群 7000001 确认】', '[撤回 --1]', '[全员禁言 7000001 1]'];
+  const bad = ['[', ']', '[]', '[踢人 、 、]', '[禁言 0 0 abc]', '[改名片 a b]', '【退群 200000001 确认】', '[撤回 --1]', '[全员禁言 200000001 1]'];
   for (const text of bad) {
     assert.doesNotThrow(() => parseAdminCommand(text), text);
     assert.equal(typeof parseAdminCommand(text).ok, 'boolean');

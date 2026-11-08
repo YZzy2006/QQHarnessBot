@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+let virtualPacingClock = 0;
 // 好友空间动态互动：桥接集成测试。用 VM harness 启动真实 bridge.js，不碰真 QQ/DSH/网络。
 import assert from 'node:assert/strict';
 import { bridgeHarness } from './audit-bridge-harness.mjs';
@@ -16,12 +17,12 @@ async function test(name, fn) {
 }
 
 const OWNER = 123;
-const SELF_UIN = 2867977191;
+const SELF_UIN = 100000004;
 const HOUR = 3600 * 1000;
 const nowSec = () => Math.floor(Date.now() / 1000);
 const TID = (n) => n.toString(16).padStart(24, '0');
 
-const bridge = await bridgeHarness({
+const bridge = await bridgeHarness({ globals: { performance: { now: () => (virtualPacingClock += 5000) } },
   config: {
     socialV2: {
       qzone: { enabled: true },
@@ -66,23 +67,23 @@ const calls = bridge.calls;
 function feed(overrides = {}) {
   return {
     uin: 111,
-    nickname: '示例好友甲',
+    nickname: '测试联系人',
     time: nowSec() - 3600,
     appid: 311,
     key: TID(1),
-    html: '<div class="f-info">示例好友甲 10月19日 19:00 晚饭吃了个很怪的搭配 <a>浏览12次</a></div>',
+    html: '<div class="f-info">测试联系人 10月19日 19:00 晚饭吃了个很怪的搭配 <a>浏览12次</a></div>',
     ...overrides
   };
 }
 
 function feedWithComments({
   botComment = '看着就香',
-  replyNick = '示例好友甲',
+  replyNick = '测试联系人',
   replyText = '是吧，下次一起',
   replyUin = 111
 } = {}) {
   return feed({
-    html: `<div class="f-info">示例好友甲 10月19日 19:00 晚饭吃了个很怪的搭配 <a>浏览12次</a></div>
+    html: `<div class="f-info">测试联系人 10月19日 19:00 晚饭吃了个很怪的搭配 <a>浏览12次</a></div>
       <div class="mod-comments"><div class="comments-list"><ul>
       <li class="comments-item bor3" data-type="commentroot" data-tid="1" data-uin="${SELF_UIN}" data-nick="樱良"><div class="comments-content"><a href="http://user.qzone.qq.com/${SELF_UIN}">樱良</a>&nbsp; : ${botComment} <div class="comments-op"><span class="state">10月19日 10:00</span></div></div></li>
       <li class="comments-item bor3" data-type="replyroot" data-tid="1" data-uin="${replyUin}" data-nick="${replyNick}"><div class="comments-content"><a href="http://user.qzone.qq.com/${replyUin}">${replyNick}</a>&nbsp;回复<a href="http://user.qzone.qq.com/${SELF_UIN}">樱良</a>&nbsp; : ${replyText} <div class="comments-op"><span class="state">10月19日 21:00</span></div></div></li>
@@ -541,7 +542,7 @@ await test('追评：有人回复机器人的评论时再评一次', async () =>
   });
   assert.equal(result.ok, true);
   assert.equal(args.mode, 'followup');
-  assert.equal(args.replyNick, '示例好友甲');
+  assert.equal(args.replyNick, '测试联系人');
   assert.equal(args.replyText, '是吧，下次一起');
   assert.equal(calls.qzoneComments.length, 1);
   assert.equal(calls.qzoneComments[0].tid, item.key);
@@ -705,7 +706,7 @@ await test('好友动态查询帮助：[好友动态查询] 返回用法规范',
   const reply = await cmd('[好友动态查询]');
   assert.match(reply, /好友动态查询 · 用法/);
   assert.match(reply, /\[查看好友动态\] \[最近30天\] \[最多5条\]/);
-  assert.match(reply, /\[查看示例好友甲的动态\] \[最近30天\] \[最多10条\]/);
+  assert.match(reply, /\[查看测试联系人的动态\] \[最近30天\] \[最多10条\]/);
   assert.match(reply, /\[点赞 1\]/);
   assert.equal(calls.qzoneFeeds.length, 0);
   assert.equal(bridge.getQzoneSocialState().lastQuery, null);
@@ -729,23 +730,23 @@ await test('好友动态查询：全部好友 + 时间/条数过滤', async () =
 
 await test('好友动态查询：指定好友', async () => {
   resetSocial();
-  calls.qzoneFriends.push({ user_id: 111, nickname: '示例好友甲', remark: '' });
+  calls.qzoneFriends.push({ user_id: 111, nickname: '测试联系人', remark: '' });
   calls.qzoneFriendPosts.push({
     tid: TID(1),
     time: nowSec() - 3600,
-    content: '示例好友乙闪卡',
+    content: '大肥鱼闪卡',
     comment_num: 2,
     is_private: false
   });
-  const reply = await cmd('查看示例好友甲的动态 最近3天 最多5条');
-  assert.match(reply, /示例好友甲/);
-  assert.match(reply, /示例好友乙闪卡/);
+  const reply = await cmd('查看测试联系人的动态 最近3天 最多5条');
+  assert.match(reply, /测试联系人/);
+  assert.match(reply, /大肥鱼闪卡/);
   assert.equal(bridge.getQzoneSocialState().lastQuery.items[0].uin, 111);
 });
 
 await test('好友动态查询：找不到好友', async () => {
   resetSocial();
-  calls.qzoneFriends.push({ user_id: 111, nickname: '示例好友甲', remark: '' });
+  calls.qzoneFriends.push({ user_id: 111, nickname: '测试联系人', remark: '' });
   const reply = await cmd('查看不存在的人的动态 最近3天 最多5条');
   assert.match(reply, /没找到好友/);
 });
@@ -774,17 +775,17 @@ await test('好友动态查询：[点赞 N] 重复点赞会提示已赞过，不
 
 await test('资料卡点赞：唯一好友按指定次数发送', async () => {
   resetSocial();
-  calls.qzoneFriends.push({ user_id: 111, nickname: '示例好友甲', remark: '' });
-  const reply = await cmd('[资料卡点赞] [示例好友甲] [3]');
-  assert.match(reply, /已给「示例好友甲」（QQ 111）资料卡点赞 3 次/);
+  calls.qzoneFriends.push({ user_id: 111, nickname: '测试联系人', remark: '' });
+  const reply = await cmd('[资料卡点赞] [测试联系人] [3]');
+  assert.match(reply, /已给“测试联系人”（QQ 111）资料卡点赞 3 次/);
   assert.equal(calls.profileLikes[0].user_id, 111);
   assert.equal(calls.profileLikes[0].times, 3);
 });
 
 await test('资料卡点赞：省略次数默认 10 次', async () => {
   resetSocial();
-  calls.qzoneFriends.push({ user_id: 111, nickname: '示例好友甲', remark: '' });
-  const reply = await cmd('[资料卡点赞] [示例好友甲]');
+  calls.qzoneFriends.push({ user_id: 111, nickname: '测试联系人', remark: '' });
+  const reply = await cmd('[资料卡点赞] [测试联系人]');
   assert.match(reply, /资料卡点赞 10 次/);
   assert.equal(calls.profileLikes[0].user_id, 111);
   assert.equal(calls.profileLikes[0].times, 10);
@@ -792,8 +793,8 @@ await test('资料卡点赞：省略次数默认 10 次', async () => {
 
 await test('资料卡点赞：超过 10 次按 10 次并提示', async () => {
   resetSocial();
-  calls.qzoneFriends.push({ user_id: 111, nickname: '示例好友甲', remark: '' });
-  const reply = await cmd('[资料卡点赞] [示例好友甲] [20]');
+  calls.qzoneFriends.push({ user_id: 111, nickname: '测试联系人', remark: '' });
+  const reply = await cmd('[资料卡点赞] [测试联系人] [20]');
   assert.match(reply, /已按 10 次/);
   assert.equal(calls.profileLikes[0].user_id, 111);
   assert.equal(calls.profileLikes[0].times, 10);
@@ -802,25 +803,25 @@ await test('资料卡点赞：超过 10 次按 10 次并提示', async () => {
 await test('资料卡点赞：重名先列候选，再按序号选择', async () => {
   resetSocial();
   calls.qzoneFriends.push(
-    { user_id: 111, nickname: '示例好友甲', remark: '' },
-    { user_id: 222, nickname: '示例好友甲', remark: '老王' }
+    { user_id: 111, nickname: '测试联系人', remark: '' },
+    { user_id: 222, nickname: '测试联系人', remark: '老王' }
   );
-  const first = await cmd('[资料卡点赞] [示例好友甲] [5]');
-  assert.match(first, /找到 2 个「示例好友甲」/);
-  assert.match(first, /1\. 示例好友甲（QQ 111）/);
-  assert.match(first, /2\. 示例好友甲（QQ 222，备注：老王）/);
+  const first = await cmd('[资料卡点赞] [测试联系人] [5]');
+  assert.match(first, /找到 2 个“测试联系人”/);
+  assert.match(first, /1\. 测试联系人（QQ 111）/);
+  assert.match(first, /2\. 测试联系人（QQ 222，备注：老王）/);
   assert.equal(calls.profileLikes.length, 0);
   const second = await cmd('[资料卡点赞 2] [5]');
-  assert.match(second, /已给「老王」（QQ 222）资料卡点赞 5 次/);
+  assert.match(second, /已给“老王”（QQ 222）资料卡点赞 5 次/);
   assert.equal(calls.profileLikes[0].user_id, 222);
   assert.equal(calls.profileLikes[0].times, 5);
 });
 
 await test('资料卡点赞：直接用 QQ 号', async () => {
   resetSocial();
-  const reply = await cmd('[资料卡点赞] [7770486] [5]');
-  assert.match(reply, /已给 QQ 7770486 资料卡点赞 5 次/);
-  assert.equal(calls.profileLikes[0].user_id, 7770486);
+  const reply = await cmd('[资料卡点赞] [100000001] [5]');
+  assert.match(reply, /已给 QQ 100000001 资料卡点赞 5 次/);
+  assert.equal(calls.profileLikes[0].user_id, 100000001);
   assert.equal(calls.profileLikes[0].times, 5);
   assert.equal(calls.qzoneFriends.length, 0);
 });
@@ -828,8 +829,8 @@ await test('资料卡点赞：直接用 QQ 号', async () => {
 await test('资料卡点赞：找不到好友', async () => {
   resetSocial();
   calls.qzoneFriends.push({ user_id: 111, nickname: '别人', remark: '' });
-  const reply = await cmd('[资料卡点赞] [示例好友甲] [5]');
-  assert.match(reply, /没找到好友「示例好友甲」/);
+  const reply = await cmd('[资料卡点赞] [测试联系人] [5]');
+  assert.match(reply, /没找到好友“测试联系人”/);
   assert.equal(calls.profileLikes.length, 0);
 });
 
@@ -837,7 +838,7 @@ await test('资料卡点赞：帮助返回完整用法', async () => {
   resetSocial();
   const reply = await cmd('[资料卡点赞]');
   assert.match(reply, /好友资料卡点赞 · 用法/);
-  assert.match(reply, /\[资料卡点赞\] \[示例好友甲\] \[10\]/);
+  assert.match(reply, /\[资料卡点赞\] \[测试联系人\] \[10\]/);
   assert.match(reply, /重名好友/);
   assert.equal(calls.profileLikes.length, 0);
 });
@@ -853,7 +854,7 @@ await test('好友申请：记录验证消息并通知 owner', async () => {
   const text = calls.sent.map((m) => m.text).join('\n');
   assert.match(text, /【好友申请】fr_/);
   assert.match(text, /QQ：123456/);
-  assert.match(text, /验证消息：「我是群里的某某」/);
+  assert.match(text, /验证消息：“我是群里的某某”/);
   assert.match(text, /对方申请加你/);
   assert.match(text, /\[通过申请 fr_/);
 });
@@ -897,10 +898,10 @@ await test('好友申请：列表和来源查询', async () => {
   await bridge.handleFriendRequestEvent({ user_id: 123456, comment: '我是群里的某某', flag: 'uid_abc', time: Math.floor(Date.now() / 1000) });
   const list = await cmd('[好友申请]');
   assert.match(list, /待处理好友申请】1 条/);
-  assert.match(list, /验证消息：「我是群里的某某」/);
+  assert.match(list, /验证消息：“我是群里的某某”/);
   const source = await cmd('[好友来源 123456]');
   assert.match(source, /对方申请加你/);
-  assert.match(source, /验证消息：「我是群里的某某」/);
+  assert.match(source, /验证消息：“我是群里的某某”/);
 });
 
 await test('好友来源：注入私聊提示词，不乱问', async () => {
@@ -956,17 +957,17 @@ await test('好友快照：首次只建快照，之后新增标记来源不确�
 await test('好友查看：全部好友带 QQ 号，过滤自己和设备', async () => {
   resetSocial();
   calls.qzoneFriends.push(
-    { user_id: 7770486, nickname: '示例好友甲', remark: '' },
+    { user_id: 100000001, nickname: '测试联系人', remark: '' },
     { user_id: 123456, nickname: 'A', remark: '阿明' },
     { user_id: SELF_UIN, nickname: '樱良', remark: '' },
-    { user_id: 2113929217, nickname: '我的电脑', remark: '' },
-    { user_id: 2113929218, nickname: '我的手机', remark: '' }
+    { user_id: 100100001, nickname: '我的电脑', remark: '' },
+    { user_id: 100100002, nickname: '我的手机', remark: '' }
   );
   const reply = await cmd('[查看你全部好友]');
   assert.match(reply, /【全部好友】共 2 人/);
-  assert.match(reply, /示例好友甲\(7770486\)/);
+  assert.match(reply, /测试联系人\(100000001\)/);
   assert.match(reply, /阿明\(123456\)/);
-  assert.doesNotMatch(reply, /樱良\(2867977191\)/);
+  assert.doesNotMatch(reply, /樱良\(100000004\)/);
   assert.doesNotMatch(reply, /我的电脑/);
   assert.doesNotMatch(reply, /我的手机/);
 });
@@ -974,12 +975,12 @@ await test('好友查看：全部好友带 QQ 号，过滤自己和设备', asyn
 await test('好友查看：最近最活跃按收到消息数排序，不含 owner', async () => {
   resetSocial();
   calls.qzoneFriends.push(
-    { user_id: 7770486, nickname: '示例好友甲', remark: '' },
+    { user_id: 100000001, nickname: '测试联系人', remark: '' },
     { user_id: 123456, nickname: 'A', remark: '阿明' },
     { user_id: OWNER, nickname: 'owner', remark: '' }
   );
   const now = Date.now();
-  bridge.getSocialV2State('private:7770486').recentMessages = [
+  bridge.getSocialV2State('private:100000001').recentMessages = [
     { isSelf: false, time: now - 1000, text: 'a' },
     { isSelf: false, time: now - 2000, text: 'b' },
     { isSelf: true, time: now - 500, text: 'c' }
@@ -994,20 +995,20 @@ await test('好友查看：最近最活跃按收到消息数排序，不含 owne
   ];
   const reply = await cmd('[查看你最近最活跃的2个好友]');
   assert.match(reply, /【最近活跃好友】近 7 天（按收到消息数排序，不含你）/);
-  assert.match(reply, /1\. 示例好友甲\(7770486\)  2 条/);
+  assert.match(reply, /1\. 测试联系人\(100000001\)  2 条/);
   assert.match(reply, /2\. 阿明\(123456\)  1 条/);
   assert.doesNotMatch(reply, /owner\(123\)/);
 });
 
 await test('好友查看：对话用合并转发，不逐条发、不进记忆', async () => {
   resetSocial();
-  calls.qzoneFriends.push({ user_id: 7770486, nickname: '示例好友甲', remark: '' });
+  calls.qzoneFriends.push({ user_id: 100000001, nickname: '测试联系人', remark: '' });
   calls.friendHistory.push(
-    { user_id: 7770486, sender: { nickname: '示例好友甲' }, message: [{ type: 'text', data: { text: '在吗' } }], time: 1792425000 },
-    { user_id: 2867977191, sender: {}, message: [{ type: 'text', data: { text: '在' } }], time: 1792425060 }
+    { user_id: 100000001, sender: { nickname: '测试联系人' }, message: [{ type: 'text', data: { text: '在吗' } }], time: 1792425000 },
+    { user_id: 100000004, sender: {}, message: [{ type: 'text', data: { text: '在' } }], time: 1792425060 }
   );
   const before = bridge.getSocialV2State(`private:${OWNER}`).recentMessages.length;
-  const reply = await cmd('[查看示例好友甲最近2条对话]');
+  const reply = await cmd('[查看测试联系人最近2条对话]');
   const after = bridge.getSocialV2State(`private:${OWNER}`).recentMessages.length;
   assert.equal(after, before, 'owner recentMessages 不应增加');
   assert.equal(calls.privateForwards.length, 1);
@@ -1015,16 +1016,16 @@ await test('好友查看：对话用合并转发，不逐条发、不进记忆',
   assert.equal(calls.privateForwards[0].messages.length, 2);
   assert.deepEqual(calls.privateForwards[0].messages[0].data.content, [{ type: 'text', data: { text: '在吗' } }]);
   assert.deepEqual(calls.privateForwards[0].messages[1].data.content, [{ type: 'text', data: { text: '在' } }]);
-  assert.match(reply, /已转发与「示例好友甲」\(7770486\) 的最近 2 条对话/);
+  assert.match(reply, /已转发与“测试联系人”\(100000001\) 的最近 2 条对话/);
   assert.equal(calls.sent.filter((m) => m.kind === 'private').length, 1, '只发一条确认，不逐条刷屏');
 });
 
 await test('好友查看：对话转发保留图片/表情', async () => {
   resetSocial();
-  calls.qzoneFriends.push({ user_id: 7770486, nickname: '示例好友甲', remark: '' });
+  calls.qzoneFriends.push({ user_id: 100000001, nickname: '测试联系人', remark: '' });
   calls.friendHistory.push({
-    user_id: 7770486,
-    sender: { nickname: '示例好友甲' },
+    user_id: 100000001,
+    sender: { nickname: '测试联系人' },
     time: 1792425000,
     message: [
       { type: 'text', data: { text: '看图' } },
@@ -1032,7 +1033,7 @@ await test('好友查看：对话转发保留图片/表情', async () => {
       { type: 'face', data: { id: '277' } }
     ]
   });
-  await cmd('[查看示例好友甲最近1条对话]');
+  await cmd('[查看测试联系人最近1条对话]');
   assert.equal(calls.privateForwards.length, 1);
   assert.deepEqual(calls.privateForwards[0].messages[0].data.content, [
     { type: 'text', data: { text: '看图' } },
@@ -1043,10 +1044,10 @@ await test('好友查看：对话转发保留图片/表情', async () => {
 
 await test('好友查看：媒体转发失败时退回文字版', async () => {
   resetSocial();
-  calls.qzoneFriends.push({ user_id: 7770486, nickname: '示例好友甲', remark: '' });
+  calls.qzoneFriends.push({ user_id: 100000001, nickname: '测试联系人', remark: '' });
   calls.friendHistory.push({
-    user_id: 7770486,
-    sender: { nickname: '示例好友甲' },
+    user_id: 100000001,
+    sender: { nickname: '测试联系人' },
     time: 1792425000,
     message: [
       { type: 'text', data: { text: '看图' } },
@@ -1054,7 +1055,7 @@ await test('好友查看：媒体转发失败时退回文字版', async () => {
     ]
   });
   calls.privateForwardFailOnce = true;
-  const reply = await cmd('[查看示例好友甲最近1条对话]');
+  const reply = await cmd('[查看测试联系人最近1条对话]');
   assert.match(reply, /已改为文字版/);
   assert.equal(calls.privateForwards.length, 2);
   assert.deepEqual(calls.privateForwards[0].messages[0].data.content, [
@@ -1068,15 +1069,15 @@ await test('好友查看：媒体转发失败时退回文字版', async () => {
 
 await test('好友查看：转发彻底失败时给出错误提示', async () => {
   resetSocial();
-  calls.qzoneFriends.push({ user_id: 7770486, nickname: '示例好友甲', remark: '' });
+  calls.qzoneFriends.push({ user_id: 100000001, nickname: '测试联系人', remark: '' });
   calls.friendHistory.push({
-    user_id: 7770486,
-    sender: { nickname: '示例好友甲' },
+    user_id: 100000001,
+    sender: { nickname: '测试联系人' },
     time: 1792425000,
     message: [{ type: 'text', data: { text: '在吗' } }]
   });
   calls.privateForwardFail = true;
-  const reply = await cmd('[查看示例好友甲最近1条对话]');
+  const reply = await cmd('[查看测试联系人最近1条对话]');
   assert.match(reply, /转发对话失败/);
   assert.equal(calls.privateForwards.length, 2);
 });
@@ -1084,11 +1085,11 @@ await test('好友查看：转发彻底失败时给出错误提示', async () =>
 await test('好友查看：重名要求用 QQ 号重发', async () => {
   resetSocial();
   calls.qzoneFriends.push(
-    { user_id: 111111, nickname: '示例好友甲', remark: '' },
-    { user_id: 222222, nickname: '示例好友甲', remark: '老王' }
+    { user_id: 111111, nickname: '测试联系人', remark: '' },
+    { user_id: 222222, nickname: '测试联系人', remark: '老王' }
   );
-  const reply = await cmd('[查看示例好友甲最近5条对话]');
-  assert.match(reply, /找到 2 个「示例好友甲」/);
+  const reply = await cmd('[查看测试联系人最近5条对话]');
+  assert.match(reply, /找到 2 个“测试联系人”/);
   assert.match(reply, /请用 QQ 号重发/);
   assert.equal(calls.privateForwards.length, 0);
 });
@@ -1119,18 +1120,18 @@ await test('指令引导：普通聊天不拦截', async () => {
 
 await test('好友查看：引用图片保留（目标在历史里）', async () => {
   resetSocial();
-  calls.qzoneFriends.push({ user_id: 7770486, nickname: '示例好友甲', remark: '' });
+  calls.qzoneFriends.push({ user_id: 100000001, nickname: '测试联系人', remark: '' });
   calls.friendHistory.push(
     {
       message_id: '1892292496',
-      user_id: 7770486,
-      sender: { nickname: '示例好友甲' },
+      user_id: 100000001,
+      sender: { nickname: '测试联系人' },
       time: 100,
       message: [{ type: 'image', data: { url: 'https://example.com/a.jpg', sub_type: 1, summary: '[动画表情]' } }]
     },
     {
       message_id: '647221224',
-      user_id: 2867977191,
+      user_id: 100000004,
       sender: { nickname: '樱良' },
       time: 101,
       message: [
@@ -1139,19 +1140,19 @@ await test('好友查看：引用图片保留（目标在历史里）', async ()
       ]
     }
   );
-  await cmd('[查看示例好友甲最近2条对话]');
+  await cmd('[查看测试联系人最近2条对话]');
   const content = calls.privateForwards[0].messages[1].data.content;
-  assert.match(content[0].data.text, /【引用 示例好友甲\(7770486\): /);
+  assert.match(content[0].data.text, /【引用 测试联系人\(100000001\): /);
   assert.deepEqual(content[1], { type: 'image', data: { url: 'https://example.com/a.jpg', sub_type: 1, summary: '[动画表情]' } });
   assert.equal(content[3].data.text, '这牙一露');
 });
 
 await test('好友查看：引用目标不在历史时用 get_msg 补拉', async () => {
   resetSocial();
-  calls.qzoneFriends.push({ user_id: 7770486, nickname: '示例好友甲', remark: '' });
+  calls.qzoneFriends.push({ user_id: 100000001, nickname: '测试联系人', remark: '' });
   calls.friendHistory.push({
     message_id: '647221224',
-    user_id: 2867977191,
+    user_id: 100000004,
     sender: { nickname: '樱良' },
     time: 101,
     message: [
@@ -1161,26 +1162,26 @@ await test('好友查看：引用目标不在历史时用 get_msg 补拉', async
   });
   calls.getMessageData['1892292496'] = {
     message_id: '1892292496',
-    user_id: 7770486,
-    sender: { nickname: '示例好友甲' },
+    user_id: 100000001,
+    sender: { nickname: '测试联系人' },
     time: 100,
     message: [{ type: 'image', data: { url: 'https://example.com/a.jpg', sub_type: 0, summary: '[图片]' } }]
   };
-  await cmd('[查看示例好友甲最近1条对话]');
+  await cmd('[查看测试联系人最近1条对话]');
   const content = calls.privateForwards[0].messages[0].data.content;
-  assert.match(content[0].data.text, /【引用 示例好友甲\(7770486\): /);
+  assert.match(content[0].data.text, /【引用 测试联系人\(100000001\): /);
   assert.deepEqual(content[1], { type: 'image', data: { url: 'https://example.com/a.jpg', sub_type: 0, summary: '[图片]' } });
 });
 
 await test('群聊记录：按群号合并转发，不进记忆', async () => {
   resetSocial();
-  calls.groups.push({ group_id: 7000001, group_name: '测试群聊', member_count: 4 });
+  calls.groups.push({ group_id: 200000001, group_name: '测试群聊', member_count: 4 });
   calls.groupHistory.push(
-    { user_id: 7770486, sender: { nickname: '示例好友甲', card: '' }, message: [{ type: 'text', data: { text: '在吗' } }], time: 1792425000 },
-    { user_id: 2867977191, sender: { nickname: '樱良', card: '' }, message: [{ type: 'text', data: { text: '在' } }], time: 1792425060 }
+    { user_id: 100000001, sender: { nickname: '测试联系人', card: '' }, message: [{ type: 'text', data: { text: '在吗' } }], time: 1792425000 },
+    { user_id: 100000004, sender: { nickname: '樱良', card: '' }, message: [{ type: 'text', data: { text: '在' } }], time: 1792425060 }
   );
   const before = bridge.getSocialV2State(`private:${OWNER}`).recentMessages.length;
-  const reply = await cmd('[查看群聊 7000001 最近2条对话]');
+  const reply = await cmd('[查看群聊 200000001 最近2条对话]');
   const after = bridge.getSocialV2State(`private:${OWNER}`).recentMessages.length;
   assert.equal(after, before, '群聊转发不应写入 owner recentMessages');
   assert.equal(calls.privateForwards.length, 1);
@@ -1188,15 +1189,15 @@ await test('群聊记录：按群号合并转发，不进记忆', async () => {
   assert.equal(calls.privateForwards[0].messages.length, 2);
   assert.deepEqual(calls.privateForwards[0].messages[0].data.content, [{ type: 'text', data: { text: '在吗' } }]);
   assert.deepEqual(calls.privateForwards[0].messages[1].data.content, [{ type: 'text', data: { text: '在' } }]);
-  assert.match(reply, /已转发群「测试群聊」\(7000001\) 的最近 2 条消息/);
+  assert.match(reply, /已转发群“测试群聊”\(200000001\) 的最近 2 条消息/);
 });
 
 await test('群聊记录：群名带空格 / 重名 / 找不到', async () => {
   resetSocial();
   calls.groups.push({ group_id: 111111, group_name: '深夜 闲聊 群', member_count: 3 });
-  calls.groupHistory.push({ user_id: 7770486, sender: { nickname: '示例好友甲' }, message: [{ type: 'text', data: { text: '晚安' } }], time: 1792425000 });
+  calls.groupHistory.push({ user_id: 100000001, sender: { nickname: '测试联系人' }, message: [{ type: 'text', data: { text: '晚安' } }], time: 1792425000 });
   const byName = await cmd('[查看群聊 深夜 闲聊 群 最近1条对话]');
-  assert.match(byName, /已转发群「深夜 闲聊 群」\(111111\)/);
+  assert.match(byName, /已转发群“深夜 闲聊 群”\(111111\)/);
 
   resetSocial();
   calls.groups.push(
@@ -1204,13 +1205,13 @@ await test('群聊记录：群名带空格 / 重名 / 找不到', async () => {
     { group_id: 333333, group_name: '重名群', member_count: 4 }
   );
   const dup = await cmd('[查看群聊 重名群]');
-  assert.match(dup, /找到 2 个「重名群」/);
+  assert.match(dup, /找到 2 个“重名群”/);
   assert.match(dup, /请用群号重发/);
   assert.equal(calls.privateForwards.length, 0);
 
   resetSocial();
   const missing = await cmd('[查看群聊 不存在的群]');
-  assert.match(missing, /没找到群「不存在的群」/);
+  assert.match(missing, /没找到群“不存在的群”/);
 });
 
 await test('好友申请：可疑/离线申请列表 + 按 df id 通过', async () => {
@@ -1218,7 +1219,7 @@ await test('好友申请：可疑/离线申请列表 + 按 df id 通过', async 
   resetFriendRequests();
   calls.doubtFriendRequests.push({
     uid: 'u_test12345678', user_id: 123456, nick: '小明', source: '群聊',
-    reason: '', msg: '我是群里的', group_code: '7000001', reqTime: Date.now()
+    reason: '', msg: '我是群里的', group_code: '200000001', reqTime: Date.now()
   });
   const list = await cmd('[好友申请]');
   assert.match(list, /可疑\/离线好友申请】1 条/);
@@ -1235,7 +1236,7 @@ await test('好友申请：可疑/离线申请列表 + 按 df id 通过', async 
 await test('管理员：入群申请列表 + 按序号通过', async () => {
   resetSocial();
   calls.groupSystemMsgs.push({
-    group_id: 7000001, group_name: '测试群聊', request_id: 7,
+    group_id: 200000001, group_name: '测试群聊', request_id: 7,
     requester_uin: 123456, requester_nick: '申请人', invitor_uin: 0, invitor_nick: '',
     message: '想进群', checked: false, flag: 'flag_test_1'
   });
@@ -1252,36 +1253,36 @@ await test('管理员：入群申请列表 + 按序号通过', async () => {
 
 await test('管理员：踢人/退群/删好友必须带确认', async () => {
   resetSocial();
-  const noConfirm = await cmd('[踢人 7000001 7770486]');
+  const noConfirm = await cmd('[踢人 200000001 100000001]');
   assert.match(noConfirm, /危险操作/);
   assert.equal(calls.kicks.length, 0);
-  const kick = await cmd('[踢人 7000001 7770486 确认]');
+  const kick = await cmd('[踢人 200000001 100000001 确认]');
   assert.match(kick, /已踢出/);
-  assert.equal(calls.kicks[0].group_id, 7000001);
-  assert.equal(calls.kicks[0].user_id, 7770486);
+  assert.equal(calls.kicks[0].group_id, 200000001);
+  assert.equal(calls.kicks[0].user_id, 100000001);
 
-  await cmd('[退群 7000001 确认]');
-  assert.equal(calls.groupLeaves[0].group_id, 7000001);
-  await cmd('[删好友 7770486 确认]');
-  assert.equal(calls.deletedFriends[0].user_id, 7770486);
+  await cmd('[退群 200000001 确认]');
+  assert.equal(calls.groupLeaves[0].group_id, 200000001);
+  await cmd('[删好友 100000001 确认]');
+  assert.equal(calls.deletedFriends[0].user_id, 100000001);
 });
 
 await test('管理员：禁言/解禁/全员禁言/改名片/改群名/设管理', async () => {
   resetSocial();
-  const warn = await cmd('[禁言 7000001 7770486 30]');
+  const warn = await cmd('[禁言 200000001 100000001 30]');
   assert.match(warn, /危险操作：禁言/);
   assert.equal(calls.bans.length, 0);
-  await cmd('[禁言 7000001 7770486 30 确认]');
+  await cmd('[禁言 200000001 100000001 30 确认]');
   assert.equal(calls.bans[0].duration, 1800);
-  await cmd('[解禁 7000001 7770486]');
+  await cmd('[解禁 200000001 100000001]');
   assert.equal(calls.bans[1].duration, 0);
-  await cmd('[全员禁言 7000001 on 确认]');
+  await cmd('[全员禁言 200000001 on 确认]');
   assert.equal(calls.wholeBans[0].enable, true);
-  await cmd('[改名片 7000001 7770486 大 肥 鱼 确认]');
+  await cmd('[改名片 200000001 100000001 大 肥 鱼 确认]');
   assert.equal(calls.groupCards[0].card, '大 肥 鱼');
-  await cmd('[改群名 7000001 新 群 名 确认]');
+  await cmd('[改群名 200000001 新 群 名 确认]');
   assert.equal(calls.groupNames[0].group_name, '新 群 名');
-  await cmd('[设管理 7000001 7770486 on 确认]');
+  await cmd('[设管理 200000001 100000001 on 确认]');
   assert.equal(calls.groupAdmins[0].enable, true);
 });
 
@@ -1292,9 +1293,9 @@ await test('管理员：撤回/查QQ/改备注', async () => {
   assert.equal(calls.deletedMsgs.length, 0);
   await cmd('[撤回 -123456789 确认]');
   assert.equal(calls.deletedMsgs[0].message_id, -123456789);
-  const info = await cmd('[查QQ 7770486]');
-  assert.match(info, /stranger-7770486/);
-  await cmd('[改备注 7770486 老同学]');
+  const info = await cmd('[查QQ 100000001]');
+  assert.match(info, /stranger-100000001/);
+  await cmd('[改备注 100000001 老同学]');
   assert.equal(calls.friendRemarks[0].remark, '老同学');
   const help = await cmd('[管理帮助]');
   assert.match(help, /管理指令 · 用法/);
@@ -1310,25 +1311,25 @@ await test('控制台：[状态] 汇总', async () => {
 
 await test('控制台：[会话列表] / [群列表] / [群成员]', async () => {
   resetSocial();
-  bridge.getSocialV2State('private:7770486').lastIncomingAt = Date.now();
+  bridge.getSocialV2State('private:100000001').lastIncomingAt = Date.now();
   const conv = await cmd('[会话列表]');
   assert.match(conv, /【会话列表】/);
-  assert.match(conv, /private:7770486/);
+  assert.match(conv, /private:100000001/);
 
-  calls.groups.push({ group_id: 7000001, group_name: '樱良、那年夏末、示例昵称、', member_count: 4 });
+  calls.groups.push({ group_id: 200000001, group_name: '樱良、那年夏末、YNA、', member_count: 4 });
   const groups = await cmd('[群列表]');
   assert.match(groups, /【群列表】1 个/);
-  assert.match(groups, /樱良、那年夏末、示例昵称、\(7000001\)  4 人/);
+  assert.match(groups, /樱良、那年夏末、YNA、\(200000001\)  4 人/);
 
-  calls.groupMembers.push({ user_id: 7770486, card: '示例好友甲', nickname: '示例好友甲' });
-  const members = await cmd('[群成员 7000001]');
-  assert.match(members, /【群成员】7000001｜1 人/);
-  assert.match(members, /示例好友甲\(7770486\)/);
+  calls.groupMembers.push({ user_id: 100000001, card: '测试联系人', nickname: '测试联系人' });
+  const members = await cmd('[群成员 200000001]');
+  assert.match(members, /【群成员】200000001｜1 人/);
+  assert.match(members, /测试联系人\(100000001\)/);
 });
 
 await test('控制台：[提醒列表] / [取消提醒]', async () => {
   resetSocial();
-  bridge.getReminders().set('private:7770486', [
+  bridge.getReminders().set('private:100000001', [
     { id: 'r_12345678', at: Date.parse('2026-10-20T09:00:00+08:00'), text: '出门走走', createdAt: Date.now(), repeat: null }
   ]);
   const list = await cmd('[提醒列表]');
@@ -1337,7 +1338,7 @@ await test('控制台：[提醒列表] / [取消提醒]', async () => {
   assert.match(list, /出门走走/);
   const cancel = await cmd('[取消提醒 r_12345678]');
   assert.match(cancel, /已取消提醒 r_12345678/);
-  assert.equal(bridge.getReminders().get('private:7770486').length, 0);
+  assert.equal(bridge.getReminders().get('private:100000001').length, 0);
 });
 
 await test('控制台：[余额] 查询 DeepSeek 余额', async () => {

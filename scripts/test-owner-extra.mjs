@@ -60,14 +60,14 @@ test('备份状态：全部别名', () => {
 });
 
 test('群成员查：群号 + 关键词（含空格），缺群号/缺关键词', () => {
-  assert.deepEqual(parseOwnerExtraCommand('[群成员查 7000001 张 三]'), {
-    ok: true, action: 'memberSearch', groupId: 7000001, query: '张 三'
+  assert.deepEqual(parseOwnerExtraCommand('[群成员查 200000001 张 三]'), {
+    ok: true, action: 'memberSearch', groupId: 200000001, query: '张 三'
   });
   assert.deepEqual(parseOwnerExtraCommand('查群成员'), { ok: true, action: 'memberSearch', groupId: 0, query: '' });
   assert.deepEqual(parseOwnerExtraCommand('群成员搜索 张三'), { ok: true, action: 'memberSearch', groupId: 0, query: '张三' });
   assert.deepEqual(parseOwnerExtraCommand('群成员查 12345'), { ok: true, action: 'memberSearch', groupId: 12345, query: '' });
-  assert.deepEqual(parseOwnerExtraCommand('群成员查：7000001：阿明'), {
-    ok: true, action: 'memberSearch', groupId: 7000001, query: '阿明'
+  assert.deepEqual(parseOwnerExtraCommand('群成员查：200000001：阿明'), {
+    ok: true, action: 'memberSearch', groupId: 200000001, query: '阿明'
   });
   // 4 位数字不是群号，当关键词
   assert.deepEqual(parseOwnerExtraCommand('群成员查 1234'), { ok: true, action: 'memberSearch', groupId: 0, query: '1234' });
@@ -77,12 +77,12 @@ test('分段写法：群名/好友名可带空格', () => {
   assert.deepEqual(parseOwnerExtraCommand('[群成员查][测试 群聊][雨]'), {
     ok: true, action: 'memberSearch', groupId: 0, groupText: '测试 群聊', query: '雨'
   });
-  assert.deepEqual(parseOwnerExtraCommand('[拍一拍][测试群聊][示例好友甲]'), {
+  assert.deepEqual(parseOwnerExtraCommand('[拍一拍][测试群聊][测试联系人]'), {
     ok: true, action: 'poke', groupId: 0, targetId: 0, userId: 0,
-    groupText: '测试群聊', userText: '示例好友甲'
+    groupText: '测试群聊', userText: '测试联系人'
   });
-  assert.deepEqual(parseOwnerExtraCommand('[拍一拍][示例好友甲]'), {
-    ok: true, action: 'poke', groupId: 0, targetId: 0, userId: 0, userText: '示例好友甲'
+  assert.deepEqual(parseOwnerExtraCommand('[拍一拍][测试联系人]'), {
+    ok: true, action: 'poke', groupId: 0, targetId: 0, userId: 0, userText: '测试联系人'
   });
   assert.deepEqual(parseOwnerExtraCommand('[清上下文][测试 群聊][确认]'), {
     ok: true, action: 'clearContext', targetId: 0, targetText: '测试 群聊', confirmed: true
@@ -92,9 +92,9 @@ test('分段写法：群名/好友名可带空格', () => {
   assert.deepEqual(parseOwnerExtraCommand('群成员查 测试群 雨'), {
     ok: true, action: 'memberSearch', groupId: 0, groupText: '测试群', query: '雨'
   });
-  assert.deepEqual(parseOwnerExtraCommand('拍一拍 测试群 示例好友甲'), {
+  assert.deepEqual(parseOwnerExtraCommand('拍一拍 测试群 测试联系人'), {
     ok: true, action: 'poke', groupId: 0, targetId: 0, userId: 0,
-    groupText: '测试群', userText: '示例好友甲'
+    groupText: '测试群', userText: '测试联系人'
   });
   assert.deepEqual(parseOwnerExtraCommand('清上下文 测试群 确认'), {
     ok: true, action: 'clearContext', targetId: 0, targetText: '测试群', confirmed: true
@@ -105,8 +105,8 @@ test('拍一拍：私聊 / 群聊 / 缺参', () => {
   assert.deepEqual(parseOwnerExtraCommand('拍一拍 10001'), {
     ok: true, action: 'poke', groupId: 0, targetId: 10001, userId: 10001
   });
-  assert.deepEqual(parseOwnerExtraCommand('【戳一戳 7000001 10001】'), {
-    ok: true, action: 'poke', groupId: 7000001, targetId: 10001, userId: 10001
+  assert.deepEqual(parseOwnerExtraCommand('【戳一戳 200000001 10001】'), {
+    ok: true, action: 'poke', groupId: 200000001, targetId: 10001, userId: 10001
   });
   assert.deepEqual(parseOwnerExtraCommand('拍一拍'), {
     ok: true, action: 'poke', groupId: 0, targetId: 0, userId: 0
@@ -120,8 +120,8 @@ test('清上下文：目标号与确认', () => {
   assert.deepEqual(parseOwnerExtraCommand('清上下文 10001'), {
     ok: true, action: 'clearContext', targetId: 10001, confirmed: false
   });
-  assert.deepEqual(parseOwnerExtraCommand('清除上下文：7000001 确认'), {
-    ok: true, action: 'clearContext', targetId: 7000001, confirmed: true
+  assert.deepEqual(parseOwnerExtraCommand('清除上下文：200000001 确认'), {
+    ok: true, action: 'clearContext', targetId: 200000001, confirmed: true
   });
   assert.deepEqual(parseOwnerExtraCommand('清理上下文 群 10001 确认！'), {
     ok: true, action: 'clearContext', targetId: 10001, confirmed: true
@@ -227,7 +227,7 @@ test('备份状态：超过阈值标 ⚠️', () => {
 
 // ── 3. 群成员查 ───────────────────────────────────────────────────────────
 
-const GROUP_ID = 7000001;
+const GROUP_ID = 200000001;
 const MEMBERS = [
   {
     user_id: 10001, nickname: '小明', card: '阿明', role: 'owner', title: '群主本主',
@@ -325,7 +325,7 @@ const CONVERSATIONS = [
     topics: [{ text: '周末开黑' }],
     thoughts: [{ text: '喜欢被叫老哥' }]
   },
-  { key: 'group:7000001', impressions: {}, topics: [], thoughts: [] }
+  { key: 'group:200000001', impressions: {}, topics: [], thoughts: [] }
 ];
 
 test('记忆列表：会话数、向量数与每会话三种记忆', () => {
@@ -336,7 +336,7 @@ test('记忆列表：会话数、向量数与每会话三种记忆', () => {
   assert.equal(lines[2], '   印象：游戏搭子（12 次）：幽默、话多');
   assert.equal(lines[3], '   话题：周末开黑');
   assert.equal(lines[4], '   想法：喜欢被叫老哥');
-  assert.equal(lines[5], '2. group:7000001');
+  assert.equal(lines[5], '2. group:200000001');
 });
 
 test('记忆列表：截断 60 字、会话上限、空记忆', () => {
@@ -362,13 +362,13 @@ test('记忆匹配：结果行、截断 80 字、无匹配', () => {
     keyword: '猫',
     matches: [
       { key: 'private:10001', kind: '印象', text: '喜欢猫' },
-      { key: 'group:7000001', kind: '话题', text: '猫粮推荐' }
+      { key: 'group:200000001', kind: '话题', text: '猫粮推荐' }
     ]
   });
   const lines = text.split('\n');
   assert.equal(lines[0], '【忘记记忆】关键词「猫」｜匹配 2 条');
   assert.equal(lines[1], '1. private:10001｜印象｜喜欢猫');
-  assert.equal(lines[2], '2. group:7000001｜话题｜猫粮推荐');
+  assert.equal(lines[2], '2. group:200000001｜话题｜猫粮推荐');
 
   const long = formatMemoryMatches({ keyword: 'x', matches: [{ key: 'k', kind: '想法', text: 'y'.repeat(100) }] });
   assert.ok(long.includes(`｜${'y'.repeat(80)}…`), long);

@@ -33,10 +33,10 @@ test('解析：添加/删除/设置/清空，多 id 与空格逗号', () => {
   assert.deepEqual(add.ids, [123456, 654321, 111111]);
   assert.deepEqual(add.invalid, []);
 
-  const del = parseWhitelistCommand('群聊白名单 删除 7000001、7000002');
+  const del = parseWhitelistCommand('群聊白名单 删除 200000001、200100001');
   assert.equal(del.action, 'remove');
   assert.equal(del.kind, 'groups');
-  assert.deepEqual(del.ids, [7000001, 7000002]);
+  assert.deepEqual(del.ids, [200000001, 200100001]);
 
   const set = parseWhitelistCommand('[私聊白名单 设置 123456 654321]');
   assert.equal(set.action, 'set');
@@ -55,10 +55,10 @@ test('解析：添加/删除/设置/清空，多 id 与空格逗号', () => {
 });
 
 test('解析：非法 id 与缺参', () => {
-  const bad = parseWhitelistCommand('[私聊白名单 添加 123456 abc 1234567890123]');
+  const bad = parseWhitelistCommand('[私聊白名单 添加 123456 abc 1100100004123]');
   assert.equal(bad.action, 'add');
   assert.deepEqual(bad.ids, [123456]);
-  assert.deepEqual(bad.invalid, ['abc', '1234567890123']);
+  assert.deepEqual(bad.invalid, ['abc', '1100100004123']);
   const missing = parseWhitelistCommand('[私聊白名单 添加]');
   assert.equal(missing.action, 'add');
   assert.deepEqual(missing.ids, []);
@@ -75,9 +75,9 @@ test('解析：普通聊天不误判', () => {
 test('列表：私聊带名称、好友未加入、管理员警告、截断', () => {
   const text = formatWhitelistList({
     kind: 'private',
-    ids: [7770486, 123],
+    ids: [100000001, 123],
     ownerQQ: 999,
-    labels: { 7770486: '示例好友甲', 123: '测试' },
+    labels: { 100000001: '测试联系人', 123: '测试' },
     candidates: [{ id: 55555, label: '新朋友' }],
     limit: 1
   });
@@ -93,14 +93,14 @@ test('列表：私聊带名称、好友未加入、管理员警告、截断', ()
 test('列表：群聊未加入、全部摘要', () => {
   const text = formatWhitelistList({
     kind: 'groups',
-    ids: [7000001],
-    labels: { 7000001: '测试群聊' },
-    candidates: [{ id: 7000002, label: '另一个群' }]
+    ids: [200000001],
+    labels: { 200000001: '测试群聊' },
+    candidates: [{ id: 200100001, label: '另一个群' }]
   });
   assert.match(text, /【群聊白名单】1 个/);
-  assert.match(text, /测试群聊\(7000001\)/);
+  assert.match(text, /测试群聊\(200000001\)/);
   assert.match(text, /【已在群里但未加入】1 个/);
-  assert.match(text, /另一个群\(7000002\)/);
+  assert.match(text, /另一个群\(200100001\)/);
 
   const all = formatWhitelistList({ kind: 'all', privateIds: [1, 2], groupIds: [3] });
   assert.match(all, /私聊 2 个｜群聊 1 个/);
@@ -113,7 +113,7 @@ test('变更结果：添加/删除/跳过', () => {
   assert.match(add, /已在白名单，跳过：654321/);
   assert.match(add, /当前 10 个/);
 
-  const del = formatWhitelistChange({ kind: 'groups', action: 'remove', changed: [7000001], skipped: [], total: 0 });
+  const del = formatWhitelistChange({ kind: 'groups', action: 'remove', changed: [200000001], skipped: [], total: 0 });
   assert.match(del, /【群聊白名单】已移除 1 个/);
   assert.match(del, /当前 0 个/);
 });

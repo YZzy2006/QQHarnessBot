@@ -1,0 +1,15 @@
+{
+  "name": "botwork",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Yingliang workbench API service",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "check": "node --check server.mjs"
+  },
+  "dependencies": {}
+}

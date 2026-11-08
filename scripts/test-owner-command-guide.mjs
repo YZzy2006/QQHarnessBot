@@ -23,7 +23,7 @@ function test(name, fn) {
 test('好友查看指令写错 → 好友查看引导', () => {
   assert.equal(buildOwnerCommandGuide('[查看你全部好友啊]'), FRIEND_VIEW_GUIDE);
   assert.equal(buildOwnerCommandGuide('[查看你最近最活跃的]'), FRIEND_VIEW_GUIDE);
-  assert.equal(buildOwnerCommandGuide('[查看示例好友甲 20条对话]'), FRIEND_VIEW_GUIDE);
+  assert.equal(buildOwnerCommandGuide('[查看测试联系人 20条对话]'), FRIEND_VIEW_GUIDE);
   assert.equal(buildOwnerCommandGuide('[查看你最近最活跃的好友5个]'), FRIEND_VIEW_GUIDE);
 });
 
@@ -34,7 +34,7 @@ test('好友申请指令写错 → 好友申请引导', () => {
 });
 
 test('资料卡点赞写错 → 资料卡引导；无法分类 → 通用引导', () => {
-  assert.equal(buildOwnerCommandGuide('[资料卡点赞示例好友甲十次了]'), PROFILE_LIKE_GUIDE);
+  assert.equal(buildOwnerCommandGuide('[资料卡点赞测试联系人十次了]'), PROFILE_LIKE_GUIDE);
   assert.equal(buildOwnerCommandGuide('[资料卡]'), GENERIC_GUIDE);
 });
 
@@ -71,7 +71,7 @@ test('待处理评论/控制台写错 → 对应引导', () => {
 
 test('好友动态查询写错 → 动态查询引导', () => {
   assert.equal(buildOwnerCommandGuide('[查看好友动态啊]'), FEED_QUERY_GUIDE);
-  assert.equal(buildOwnerCommandGuide('[查看示例好友甲的动态 最近]'), FEED_QUERY_GUIDE);
+  assert.equal(buildOwnerCommandGuide('[查看测试联系人的动态 最近]'), FEED_QUERY_GUIDE);
 });
 
 test('普通聊天不误判', () => {
@@ -97,7 +97,7 @@ test('引导文案都带正确示例和 [指令] 入口', () => {
   }
   assert.match(FRIEND_VIEW_GUIDE, /\[查看你全部好友\]/);
   assert.match(FRIEND_REQUEST_GUIDE, /\[通过申请 1\]/);
-  assert.match(PROFILE_LIKE_GUIDE, /\[资料卡点赞\] \[示例好友甲\] \[10\]/);
+  assert.match(PROFILE_LIKE_GUIDE, /\[资料卡点赞\] \[测试联系人\] \[10\]/);
   assert.match(FEED_QUERY_GUIDE, /\[查看好友动态\] \[最近3天\] \[最多5条\]/);
 });
 

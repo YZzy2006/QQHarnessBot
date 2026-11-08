@@ -54,7 +54,7 @@ test('服务器：全部别名', () => {
 
 test('群信息：缺省群号 0，带群号/冒号/括号均可', () => {
   assert.deepEqual(parseOwnerInspectCommand('[群信息]'), { ok: true, action: 'groupInfo', groupId: 0 });
-  assert.deepEqual(parseOwnerInspectCommand('群资料：7000001'), { ok: true, action: 'groupInfo', groupId: 7000001 });
+  assert.deepEqual(parseOwnerInspectCommand('群资料：200000001'), { ok: true, action: 'groupInfo', groupId: 200000001 });
   assert.deepEqual(parseOwnerInspectCommand('查看群信息 123456'), { ok: true, action: 'groupInfo', groupId: 123456 });
   assert.deepEqual(parseOwnerInspectCommand('查群'), { ok: true, action: 'groupInfo', groupId: 0 });
   assert.deepEqual(parseOwnerInspectCommand('群详情 99999'), { ok: true, action: 'groupInfo', groupId: 99999 });
@@ -65,7 +65,7 @@ test('群名：分段写法保留空格', () => {
   assert.deepEqual(parseOwnerInspectCommand('[群公告][测试群聊]'), { ok: true, action: 'groupNotice', groupId: 0, groupText: '测试群聊' });
   assert.deepEqual(parseOwnerInspectCommand('[群荣誉][测试群聊]'), { ok: true, action: 'groupHonor', groupId: 0, groupText: '测试群聊' });
   assert.deepEqual(parseOwnerInspectCommand('[@全体剩余][测试群聊]'), { ok: true, action: 'atAllRemain', groupId: 0, groupText: '测试群聊' });
-  assert.deepEqual(parseOwnerInspectCommand('[标记已读][示例好友甲]'), { ok: true, action: 'markRead', targetId: 0, targetText: '示例好友甲' });
+  assert.deepEqual(parseOwnerInspectCommand('[标记已读][测试联系人]'), { ok: true, action: 'markRead', targetId: 0, targetText: '测试联系人' });
 });
 
 test('群名：单段空格/冒号写法', () => {
@@ -73,28 +73,28 @@ test('群名：单段空格/冒号写法', () => {
   assert.deepEqual(parseOwnerInspectCommand('群公告：测试群聊'), { ok: true, action: 'groupNotice', groupId: 0, groupText: '测试群聊' });
   assert.deepEqual(parseOwnerInspectCommand('群荣誉 测试群聊'), { ok: true, action: 'groupHonor', groupId: 0, groupText: '测试群聊' });
   assert.deepEqual(parseOwnerInspectCommand('@全体剩余 测试群聊'), { ok: true, action: 'atAllRemain', groupId: 0, groupText: '测试群聊' });
-  assert.deepEqual(parseOwnerInspectCommand('标记已读 示例好友甲'), { ok: true, action: 'markRead', targetId: 0, targetText: '示例好友甲' });
+  assert.deepEqual(parseOwnerInspectCommand('标记已读 测试联系人'), { ok: true, action: 'markRead', targetId: 0, targetText: '测试联系人' });
   // 没有分隔符的普通语句不能被当成群名。
   assert.equal(parseOwnerInspectCommand('群信息很重要').ok, false);
 });
 
 test('群公告：缺省群号 0', () => {
   assert.deepEqual(parseOwnerInspectCommand('群公告'), { ok: true, action: 'groupNotice', groupId: 0 });
-  assert.deepEqual(parseOwnerInspectCommand('查看群公告 7000001'), { ok: true, action: 'groupNotice', groupId: 7000001 });
+  assert.deepEqual(parseOwnerInspectCommand('查看群公告 200000001'), { ok: true, action: 'groupNotice', groupId: 200000001 });
   assert.deepEqual(parseOwnerInspectCommand('[群通知]'), { ok: true, action: 'groupNotice', groupId: 0 });
 });
 
 test('群荣誉：缺省群号 0，带群号/冒号/括号均可', () => {
   assert.deepEqual(parseOwnerInspectCommand('[群荣誉]'), { ok: true, action: 'groupHonor', groupId: 0 });
-  assert.deepEqual(parseOwnerInspectCommand('群荣誉：7000001'), { ok: true, action: 'groupHonor', groupId: 7000001 });
-  assert.deepEqual(parseOwnerInspectCommand('查看群荣誉 7000001'), { ok: true, action: 'groupHonor', groupId: 7000001 });
+  assert.deepEqual(parseOwnerInspectCommand('群荣誉：200000001'), { ok: true, action: 'groupHonor', groupId: 200000001 });
+  assert.deepEqual(parseOwnerInspectCommand('查看群荣誉 200000001'), { ok: true, action: 'groupHonor', groupId: 200000001 });
   assert.deepEqual(parseOwnerInspectCommand('群荣誉信息 123456'), { ok: true, action: 'groupHonor', groupId: 123456 });
 });
 
 test('@全体剩余：@ 可有可无，缺省群号 0', () => {
   assert.deepEqual(parseOwnerInspectCommand('[@全体剩余]'), { ok: true, action: 'atAllRemain', groupId: 0 });
-  assert.deepEqual(parseOwnerInspectCommand('@全体剩余 7000001'), { ok: true, action: 'atAllRemain', groupId: 7000001 });
-  assert.deepEqual(parseOwnerInspectCommand('[全体剩余 7000001]'), { ok: true, action: 'atAllRemain', groupId: 7000001 });
+  assert.deepEqual(parseOwnerInspectCommand('@全体剩余 200000001'), { ok: true, action: 'atAllRemain', groupId: 200000001 });
+  assert.deepEqual(parseOwnerInspectCommand('[全体剩余 200000001]'), { ok: true, action: 'atAllRemain', groupId: 200000001 });
   // 普通 @全体成员 不能被当成指令。
   assert.equal(parseOwnerInspectCommand('@全体成员 注意今晚维护').ok, false);
 });
@@ -126,7 +126,7 @@ test('普通聊天与非法规格不误判', () => {
   assert.deepEqual(parseOwnerInspectCommand(null), { ok: false });
   assert.deepEqual(parseOwnerInspectCommand('【】'), { ok: false });
   // 13 位不是群号：整条不匹配，而不是截成前 12 位。
-  assert.equal(parseOwnerInspectCommand('群公告 1234567890123').ok, false);
+  assert.equal(parseOwnerInspectCommand('群公告 1100100004123').ok, false);
 });
 
 // ── 2. 今日用量 ───────────────────────────────────────────────────────────
@@ -235,7 +235,7 @@ test('服务器统计：空对象全部未知且不抛异常', () => {
 // ── 4. 群信息 / 群公告 ────────────────────────────────────────────────────
 
 test('群信息：正常字段（秒级创建时间按北京时间）', () => {
-  const text = formatGroupInfo(7000001, {
+  const text = formatGroupInfo(200000001, {
     group_name: '测试群',
     member_count: 45,
     max_member_count: 200,
@@ -243,7 +243,7 @@ test('群信息：正常字段（秒级创建时间按北京时间）', () => {
     create_time: 1577900000,
     group_all_shut: 0
   });
-  assert.match(text, /【群信息】7000001/);
+  assert.match(text, /【群信息】200000001/);
   assert.match(text, /群名称：测试群/);
   assert.match(text, /成员：45 \/ 200/);
   assert.match(text, /群主：10001/);
@@ -278,7 +278,7 @@ test('群信息：空数据返回读取失败样式', () => {
 });
 
 test('群公告：数组形状（正文、时间、发布者、类型、图片数）', () => {
-  const text = formatGroupNotice(7000001, [
+  const text = formatGroupNotice(200000001, [
     {
       publisher_id: 10001,
       publish_time: Math.floor(NOW / 1000),
@@ -293,7 +293,7 @@ test('群公告：数组形状（正文、时间、发布者、类型、图片�
       image: 'https://example.com/1.png'
     }
   ]);
-  assert.match(text, /【群公告】7000001/);
+  assert.match(text, /【群公告】200000001/);
   assert.match(text, /1\. 2026-10-20 14:05 · QQ 10001 · 群公告/);
   assert.match(text, /第一则公告/);
   assert.match(text, /图片 2 张/);
@@ -321,8 +321,8 @@ test('群公告：无公告与超长正文截断', () => {
 // ── 4.5 群荣誉 / @全体剩余 ────────────────────────────────────────────────
 
 test('群荣誉：当前龙王去重、各榜单与描述', () => {
-  const text = formatGroupHonor(7000001, {
-    group_id: 7000001,
+  const text = formatGroupHonor(200000001, {
+    group_id: 200000001,
     current_talkative: { user_id: 10001, nickname: '龙王甲', description: '连续 7 天' },
     talkative_list: [
       { user_id: 10001, nickname: '龙王甲', description: '连续 7 天' },
@@ -333,7 +333,7 @@ test('群荣誉：当前龙王去重、各榜单与描述', () => {
     emotion_list: [{ user_id: 10004, nickname: '开心果' }],
     strong_newbie_list: []
   });
-  assert.match(text, /【群荣誉】7000001/);
+  assert.match(text, /【群荣誉】200000001/);
   assert.match(text, /当前龙王：龙王甲\(10001\)｜连续 7 天/);
   assert.match(text, /龙王（1）：/);
   assert.match(text, /1\. 龙王乙\(10002\)｜连续 3 天/);
@@ -369,13 +369,13 @@ test('群荣誉：单榜超过上限时截断并提示', () => {
 });
 
 test('@全体剩余：正常字段与空字段', () => {
-  const text = formatAtAllRemain(7000001, {
+  const text = formatAtAllRemain(200000001, {
     can_at_all: true,
     remain_at_all_count_for_group: 19,
     remain_at_all_count_for_uin: 10
   });
   assert.equal(text, [
-    '【@全体剩余】群 7000001',
+    '【@全体剩余】群 200000001',
     '可@全体：是',
     '群剩余次数：19',
     '我的剩余次数：10'

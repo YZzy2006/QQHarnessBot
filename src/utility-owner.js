@@ -37,7 +37,9 @@ export function createUtilityOwner(d) {
       catch{body='本周保存的真实片段：\n'+memories.map(v=>'• '+(v.correction||v.text)).join('\n')+'\n已完成事项：\n'+completed.map(v=>'• '+v.text).join('\n');}
     }
     if(JSON.stringify(weeklyData())!==JSON.stringify(data))throw Error('周记来源已变化，请重新生成，不发送旧快照');
-    return PRIVATE_REPORT_MARKER+'\n'+data.start+' 至 '+data.end+'\n'+utilityText(body,5000);
+    const report=PRIVATE_REPORT_MARKER+'\n'+data.start+' 至 '+data.end+'\n'+utilityText(body,5000);
+    await d.archiveReport?.('weekly',report);
+    return report;
   }
   async function handle(ctx,cmd) {
     const c=cmd?.command,a=cmd?.args||[];

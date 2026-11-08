@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+let virtualPacingClock = 0;
 // owner 主动/限额/定时/表情回应 + 目标名解析：VM harness 集成测试。
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -8,8 +9,8 @@ import { bridgeHarness } from './audit-bridge-harness.mjs';
 import { PROACTIVE_TOPIC_SEEDS } from '../src/proactive-topics.js';
 
 const OWNER = 123;
-const GROUP = 7000001;
-const FRIEND = 7770486;
+const GROUP = 200000001;
+const FRIEND = 100000001;
 
 let passed = 0;
 async function test(name, fn) {
@@ -23,7 +24,7 @@ async function test(name, fn) {
   }
 }
 
-const bridge = await bridgeHarness({
+const bridge = await bridgeHarness({ globals: { performance: { now: () => (virtualPacingClock += 5000) } },
   config: {
     consolePort: 0,
     allow: { private: [String(OWNER)], groups: [String(GROUP)] }
@@ -33,15 +34,15 @@ const { calls, temp } = bridge;
 
 bridge.calls.groups = [
   { group_id: GROUP, group_name: '测试群聊' },
-  { group_id: 7000002, group_name: '另一个群' },
-  { group_id: 7000003, group_name: '重名群' },
-  { group_id: 7000004, group_name: '重名群' }
+  { group_id: 200100001, group_name: '另一个群' },
+  { group_id: 200100002, group_name: '重名群' },
+  { group_id: 200100004, group_name: '重名群' }
 ];
 bridge.calls.groupMembers = [
-  { user_id: FRIEND, nickname: '示例好友甲', card: '示例好友甲', role: 'member' }
+  { user_id: FRIEND, nickname: '测试联系人', card: '测试联系人', role: 'member' }
 ];
 bridge.calls.qzoneFriends = [
-  { user_id: FRIEND, remark: '示例好友甲', nickname: '示例昵称' }
+  { user_id: FRIEND, remark: '测试联系人', nickname: 'FixtureNick' }
 ];
 
 async function cmd(text) {
@@ -78,15 +79,15 @@ await test('主动唤醒：群名解析并投递主动机会', async () => {
   assert.ok(calls.prompts.length >= 1, '应投递唤醒提示');
   const prompt = (calls.prompts.at(-1)?.content || []).map((c) => c.text || '').join('');
   assert.match(prompt, /【主动机会/);
-  assert.match(prompt, /group:7000001/);
+  assert.match(prompt, /group:200000001/);
 });
 
 await test('主动唤醒：重名群拒绝执行', async () => {
   calls.prompts.length = 0;
   const reply = await cmd('[主动唤醒][重名群]');
   assert.match(reply, /有 2 个群匹配/);
-  assert.match(reply, /7000003/);
-  assert.match(reply, /7000004/);
+  assert.match(reply, /200100002/);
+  assert.match(reply, /200100004/);
   assert.equal(calls.prompts.length, 0);
 });
 
@@ -272,8 +273,8 @@ await test('管理指令支持群名/成员名', async () => {
   assert.equal(calls.groupSigns.at(-1).group_id, GROUP);
 
   calls.specialTitles.length = 0;
-  reply = await cmd('[群头衔][测试群聊][示例好友甲][摸鱼达人][确认]');
-  assert.match(reply, /头衔改为「摸鱼达人」/);
+  reply = await cmd('[群头衔][测试群聊][测试联系人][摸鱼达人][确认]');
+  assert.match(reply, /头衔改为“摸鱼达人”/);
   assert.equal(calls.specialTitles.at(-1).group_id, GROUP);
   assert.equal(calls.specialTitles.at(-1).user_id, FRIEND);
   assert.equal(calls.specialTitles.at(-1).special_title, '摸鱼达人');
@@ -286,48 +287,49 @@ await test('只读指令支持群名', async () => {
 });
 
 await test('好友名解析：主动对话到好友', async () => {
-  const b2 = await bridgeHarness({
+  const b2 = await bridgeHarness({ globals: { performance: { now: () => (virtualPacingClock += 5000) } },
     config: {
       consolePort: 0,
       allow: { private: [String(OWNER), String(FRIEND)], groups: [] }
     }
   });
   try {
-    b2.calls.qzoneFriends = [{ user_id: FRIEND, remark: '示例好友甲', nickname: '示例昵称' }];
+    b2.calls.qzoneFriends = [{ user_id: FRIEND, remark: '测试联系人', nickname: 'FixtureNick' }];
     b2.setMode('reserved2');
     b2.calls.sent.length = 0;
     await b2.handleIncoming('private', OWNER, {
       user_id: OWNER,
       self_id: 1,
       message_id: String(Date.now()),
-      message: [{ type: 'text', data: { text: '[主动对话][示例好友甲][说早安]' } }],
-      raw_message: '[主动对话][示例好友甲][说早安]'
+      message: [{ type: 'text', data: { text: '[主动对话][测试联系人][说早安]' } }],
+      raw_message: '[主动对话][测试联系人][说早安]'
     }, b2.cfg);
     const reply = b2.calls.sent.map((m) => m.text).join('\n');
-    assert.match(reply, /已让 示例好友甲（私聊 7770486）/);
+    assert.match(reply, /已让 测试联系人（私聊 100000001）/);
     assert.ok(b2.calls.prompts.length >= 1);
     const prompt = (b2.calls.prompts.at(-1)?.content || []).map((c) => c.text || '').join('');
     assert.match(prompt, /【管理员任务/);
-    assert.match(prompt, /private:7770486/);
+    assert.match(prompt, /private:100000001/);
   } finally {
     await b2.close();
   }
 });
 
 await test('主动开口：话题方向轮换写入提示词', async () => {
-  const b5 = await bridgeHarness({
+  const b5 = await bridgeHarness({ globals: { performance: { now: () => (virtualPacingClock += 5000) } },
     config: { consolePort: 0, allow: { private: [String(OWNER)], groups: [String(GROUP)] } }
   });
   try {
     b5.setMode('reserved2');
     const key = `group:${GROUP}`;
     const st = b5.getSocialV2State(key);
+    st.lastIncomingAt = Date.now();
     st.proactiveTopicIndex = 0;
     st.wakeTimes = [];
     b5.calls.prompts.length = 0;
 
-    let result = await b5.sendWakePromptV2(key, 'proactiveCheck');
-    assert.equal(result.ok, true);
+    let result = await b5.sendWakePromptV2(key, 'proactiveCheck', { manual: true });
+    assert.equal(result.ok, true, JSON.stringify(result));
     let prompt = (b5.calls.prompts.at(-1)?.content || []).map((c) => c.text || '').join('');
     assert.match(prompt, /【本次主动方向】/);
     assert.ok(prompt.includes(PROACTIVE_TOPIC_SEEDS[0].label), '应包含第 1 个方向');
@@ -338,8 +340,8 @@ await test('主动开口：话题方向轮换写入提示词', async () => {
     b5.retireSession(key, 'test');
     b5.getSocialV2State(key).wakeTimes = [];
     b5.calls.prompts.length = 0;
-    result = await b5.sendWakePromptV2(key, 'proactiveCheck');
-    assert.equal(result.ok, true);
+    result = await b5.sendWakePromptV2(key, 'proactiveCheck', { manual: true });
+    assert.equal(result.ok, true, JSON.stringify(result));
     prompt = (b5.calls.prompts.at(-1)?.content || []).map((c) => c.text || '').join('');
     assert.ok(prompt.includes(PROACTIVE_TOPIC_SEEDS[1].label), '应轮换到第 2 个方向');
     assert.equal(st.proactiveTopicIndex, 2);
@@ -349,7 +351,7 @@ await test('主动开口：话题方向轮换写入提示词', async () => {
 });
 
 await test('发送限额：分钟上限生效，限额重置后可继续发送', async () => {
-  const b3 = await bridgeHarness({
+  const b3 = await bridgeHarness({ globals: { performance: { now: () => (virtualPacingClock += 5000) } },
     config: {
       consolePort: 0,
       ownerQQ: FRIEND,

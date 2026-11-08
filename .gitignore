@@ -48,3 +48,10 @@ roles/*
 .idea/
 Thumbs.db
 .DS_Store
+
+.runtime/
+.workbench-deps/
+*.sql
+*.db
+*.sqlite*
+config.local.*
