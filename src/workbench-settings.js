@@ -22,7 +22,7 @@ const switches = {
 
 // Administrator projection: never serialize config/state objects or provider credentials.
 export function createWorkbenchSettings({getConfig, persist, states, getState, saveStates, voiceProfiles, defaultVoice,
-  environment = {}, defaults = {}, status = () => ({}), now = Date.now}) {
+  environment = {}, defaults = {}, status = () => ({}), videoState = null, getVideoTargets = () => [], now = Date.now}) {
   const ids = list => [...new Set((Array.isArray(list) ? list : []).map(String).filter(id => /^[1-9]\d{0,11}$/.test(id)))];
   // Match allowed(): the singular field takes precedence if both spellings exist.
   const listField = (cfg, section, kind) => {
@@ -47,6 +47,7 @@ export function createWorkbenchSettings({getConfig, persist, states, getState, s
   const flagValues = cfg => Object.fromEntries(Object.entries(switches).map(([name, path]) => [name, pathValue(cfg, path) !== false]));
   const globalRevision = cfg => revision({flags: flagValues(cfg), visionModel: cfg.vision?.model || defaults.visionModel, defaultVoice: defaultVoice()});
   function rows(cfg) {
+    const video = videoState?.read(), selectedVideoKeys = new Set(getVideoTargets());
     const all = lists(cfg), owner = String(cfg.ownerQQ || ''), profiles = voices(), defaultId = defaultVoice();
     return [...new Set([...(owner ? ['private:' + owner] : []), ...all.private.map(id => 'private:' + id), ...all.groups.map(id => 'group:' + id), ...all.deniedPrivate.map(id => 'private:' + id), ...all.deniedGroups.map(id => 'group:' + id)])].map(key => {
       const [kind, id] = key.split(':'), state = states().get(key), denied = (kind === 'private' ? all.deniedPrivate : all.deniedGroups).includes(id);
@@ -55,9 +56,13 @@ export function createWorkbenchSettings({getConfig, persist, states, getState, s
       const voiceOverride = short(state?.voiceProfile, 32), selected = profiles.find(p => p.id === voiceOverride) || profiles.find(p => p.id === defaultId);
       const proactive = state?.proactiveGreetingEnabled !== false;
       const reason = proactiveGreetingBlockReason({enabled: proactive, lastIncomingAt: state?.lastIncomingAt, quietUntil: state?.proactiveQuietUntil, maxIdleDays: cfg.socialV2?.proactive?.maxIdleDays, now: now()});
-      return {key, id, kind, owner: isOwner, enabled, proactive, voiceProfile: voiceOverride || 'default', voiceLabel: selected?.label || '未配置',
+      const target = video ? videoState.target(key, video) : null;
+      const videoEnabled = !!target?.enabled, videoLimit = video ? videoState.shareLimit(key, video) : 0;
+      const videoSelected = !video?.autoSelect || selectedVideoKeys.has(key) || target?.manualSelect === true;
+      const videoStatus = !enabled ? '会话已停用' : !videoEnabled ? '主动视频已关闭' : videoLimit === 0 ? '每日限额为0，已暂停' : !videoSelected ? '等待自动选中此会话，可开启开关固定加入' : '按原浏览时段与计划运行';
+      return {video: {available: !!video, enabled: videoEnabled, dailyLimit: target?.dailyLimit ?? null, effectiveLimit: videoLimit, used: video ? videoState.shareCount(key, video) : 0, status: videoStatus, selected: videoSelected}, key, id, kind, owner: isOwner, enabled, proactive, voiceProfile: voiceOverride || 'default', voiceLabel: selected?.label || '未配置',
         proactiveStatus: !enabled ? '会话已停用' : cfg.socialV2?.proactive?.enabled === false ? '全局主动问候已关闭' : describeProactiveBlock(reason),
-        revision: revision({key, explicit, denied, proactive, voiceOverride})};
+        revision: revision({key, explicit, denied, proactive, voiceOverride, videoTarget: target, videoLimits: video?.limits, videoAutoSelect: video?.autoSelect})};
     });
   }
   function read() {
@@ -96,7 +101,7 @@ export function createWorkbenchSettings({getConfig, persist, states, getState, s
   async function update(action, input) {
     const cfg = getConfig();
     if (!plain(input)) reject('设置参数无效');
-    const fields = {'scope.add':['kind','id'],'scope.enabled':['key','revision','enabled'],'scope.proactive':['key','revision','enabled'],'scope.voice':['key','revision','profile'],'capability.toggle':['revision','id','enabled'],'service.vision':['revision','model'],'service.voice-default':['revision','profile']}[action];
+    const fields = {'scope.add':['kind','id'],'scope.enabled':['key','revision','enabled'],'scope.proactive':['key','revision','enabled'],'scope.video':['key','revision','enabled'],'scope.video-limit':['key','revision','dailyLimit'],'scope.voice':['key','revision','profile'],'capability.toggle':['revision','id','enabled'],'service.vision':['revision','model'],'service.voice-default':['revision','profile']}[action];
     if (!fields || Object.keys(input).some(key => !fields.includes(key))) reject('设置字段无效');
     if (action === 'scope.add') {
       if (!['private', 'group'].includes(input.kind) || !/^[1-9]\d{4,11}$/.test(String(input.id || ''))) reject('请填写5–12位QQ号或群号');
@@ -120,6 +125,24 @@ export function createWorkbenchSettings({getConfig, persist, states, getState, s
         return {key: row.key, message: input.enabled ? '已启用此会话' : '已停用此会话，记忆与记录保留'};
       }
       if (!row.enabled) reject('请先启用此会话', 403);
+      if (action === 'scope.video' || action === 'scope.video-limit') {
+        if (!videoState) reject('视频设置尚未连接', 503);
+        if (action === 'scope.video' && typeof input.enabled !== 'boolean') reject('主动视频开关无效');
+        if (action === 'scope.video-limit' && input.dailyLimit !== null && (!Number.isInteger(input.dailyLimit) || input.dailyLimit < 0 || input.dailyLimit > 100)) reject('每日限额须为0–100的整数，或跟随默认');
+        videoState.update(s => {
+          const target = {...videoState.target(row.key, s)};
+          if (action === 'scope.video') {
+            target.enabled = input.enabled; target.manualSelect = input.enabled;
+            target.schedule = target.schedule || 'daily';
+            target.dueAt = input.enabled ? now() + target.interval * 60000 : 0;
+          } else if (input.dailyLimit === null) delete target.dailyLimit;
+          else target.dailyLimit = input.dailyLimit;
+          // Rebuild remaining slots later; never reset today's ledger or backfill old slots.
+          delete target.plan;
+          s.targets[row.key] = target;
+        }, {settings: true});
+        return {key: row.key, message: action === 'scope.video' ? (input.enabled ? '已开启此会话的主动视频，按原时段运行' : '已关闭此会话的主动视频') : '已保存此会话每日主动视频上限；今日已用量保留'};
+      }
       if (action === 'scope.proactive') {
         if (typeof input.enabled !== 'boolean') reject('主动问候开关无效');
         await saveSessionField(row.key, 'proactiveGreetingEnabled', input.enabled);

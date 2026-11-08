@@ -66,3 +66,14 @@ test('主动对话拒绝越界目标和超过原业务500字限制，失败不�
  assert.equal((await f.action({action:'conversation.talk',key:'group:456',text:'字'.repeat(501)})).status,'failed');
  assert.equal(f.h.calls.prompts.length,0);assert.equal(f.h.calls.sent.length,0);
 });
+
+test('真实HTTP两个页面共用视频开关和独立限额；无真人发送/模型调用',async t=>{
+ const f=await setup(t),key='group:456';let row=(await f.profile()).scopes.find(r=>r.key===key);
+ assert.equal(row.video.available,true);assert.equal(row.video.effectiveLimit,3);
+ assert.equal((await f.action({action:'scope.video',key,revision:row.revision,enabled:true})).status,'succeeded');
+ let video=(await f.req('view?tab=videos&scope=all')).data.data.videoScopes.find(r=>r.key===key);assert.equal(video.video.enabled,true);
+ assert.equal((await f.action({action:'scope.video-limit',key,revision:video.revision,dailyLimit:0})).status,'succeeded');
+ row=(await f.profile()).scopes.find(r=>r.key===key);assert.equal(row.video.effectiveLimit,0);assert.match(row.video.status,/暂停/);
+ const saved=JSON.parse(fs.readFileSync(path.join(f.h.temp,'state/bilibili/control.json'),'utf8'));assert.equal(saved.targets[key].dailyLimit,0);assert.equal(saved.targets[key].manualSelect,true);
+ assert.equal((await f.action({action:'scope.video',key,revision:row.revision,enabled:false})).status,'succeeded');assert.equal(f.h.calls.sent.length,0);assert.equal(f.h.calls.prompts.length,0);
+});

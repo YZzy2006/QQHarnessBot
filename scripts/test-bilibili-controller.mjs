@@ -23,7 +23,7 @@ test('6次深读含失败尝试；每目标主动1/3，手动分享不计主动�
  const manual=f.state.reserveShare({sourceKey:'private:123',bvid:'BVbbbbbbbbbb',automatic:false});f.state.finishShare(manual,true);
  const pending=f.state.reserveShare({sourceKey:'group:456',bvid:'BVcccccccccc',automatic:true});
  assert.ok(pending);assert.equal(f.state.wasShared('group:456','BVcccccccccc'),true);
- assert.equal(createBilibiliState({stateDir:path.dirname(path.dirname(f.state.file))}).wasShared('group:456','BVcccccccccc'),true);
+ assert.equal(createBilibiliState({stateDir:path.dirname(path.dirname(f.state.file)),now:()=>Date.UTC(2026,10,1,13)}).wasShared('group:456','BVcccccccccc'),true);
 });
 test('私聊显式转发目标，开启及调频不误发，自动调度不补多轮',async t=>{
  const f=setup(t);await f.c.handle(ctx,'[分享B站][BV1100100004][group:456]');
@@ -90,5 +90,5 @@ test('复制文本多个链接拒绝，引用失败不猜最近视频，权限�
 
 test('已验证发送的卡片原视频引用按会话/消息ID持久化，过期与损坏拒绝借用',async t=>{
  const f=setup(t);f.state.rememberCard({sourceKey:'private:123',messageId:-77,url:'https://www.bilibili.com/video/BV1100100004?p=2'});
- const reloaded=createBilibiliState({stateDir:path.dirname(path.dirname(f.state.file))});assert.equal(reloaded.cardReference('private:123',-77).url,'https://www.bilibili.com/video/BV1100100004?p=2');assert.equal(reloaded.cardReference('group:456',-77),null);assert.equal(reloaded.cardReference('private:123',88),null);f.advance(8*86400000);assert.equal(f.state.cardReference('private:123',-77),null);const bad=f.state.read();bad.cards[0].url='https://example.com/';fs.writeFileSync(f.state.file,JSON.stringify(bad));assert.throws(()=>f.state.cardReference('private:123',-77),/损坏/);
+ const reloaded=createBilibiliState({stateDir:path.dirname(path.dirname(f.state.file)),now:()=>Date.UTC(2026,10,1,13)});assert.equal(reloaded.cardReference('private:123',-77).url,'https://www.bilibili.com/video/BV1100100004?p=2');assert.equal(reloaded.cardReference('group:456',-77),null);assert.equal(reloaded.cardReference('private:123',88),null);f.advance(8*86400000);assert.equal(f.state.cardReference('private:123',-77),null);const bad=f.state.read();bad.cards[0].url='https://example.com/';fs.writeFileSync(f.state.file,JSON.stringify(bad));assert.throws(()=>f.state.cardReference('private:123',-77),/损坏/);
 });

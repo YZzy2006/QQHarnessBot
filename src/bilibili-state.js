@@ -10,6 +10,7 @@ export function createBilibiliState({stateDir,now=Date.now,atomicWrite=atomicUti
  function validate(s){
   if(s?.version!==1||!Number.isSafeInteger(s.revision)||!s.limits||!Object.values(s.limits).every(numeric)||!['privateDaily','groupDaily','browseDaily'].every(k=>numeric(s.limits[k]))||!s.targets||Array.isArray(s.targets)||!Array.isArray(s.reads)||!Array.isArray(s.shares)||!s.seen||typeof s.seen!=='object')throw Error('B站状态损坏，已停止读写');
   for(const[k,v]of Object.entries(s.targets))if(!validTarget(k)||typeof v.enabled!=='boolean'||!Number.isInteger(v.interval)||v.interval<30||v.interval>1440||!Number.isInteger(v.start)||!Number.isInteger(v.end)||v.start<0||v.start>23||v.end<1||v.end>24||v.start>=v.end||!Number.isFinite(v.dueAt))throw Error('B站目标设置损坏');
+  for(const t of Object.values(s.targets)){if(t.dailyLimit!==undefined&&!numeric(t.dailyLimit))throw Error('B站会话限额损坏');if(t.manualSelect!==undefined&&typeof t.manualSelect!=='boolean')throw Error('B站会话选择设置损坏');}
   if(s.autoSelect!==undefined&&typeof s.autoSelect!=='boolean')throw Error('B站自动选择设置损坏');
   for(const t of Object.values(s.targets)){if(t.schedule!==undefined&&!['daily','interval'].includes(t.schedule))throw Error('B站计划类型损坏');if(t.plan&&(!/^\d{4}-\d{2}-\d{2}$/.test(t.plan.day)||!Array.isArray(t.plan.slots)||t.plan.slots.length>3||t.plan.slots.some(v=>!Number.isFinite(v))||!Number.isInteger(t.plan.cursor)||t.plan.cursor<0||t.plan.cursor>t.plan.slots.length))throw Error('B站每日计划损坏');}
   for(const r of s.reads)if(!r||typeof r.id!=='string'||!Number.isFinite(r.at)||typeof r.bvid!=='string'||typeof r.day!=='string')throw Error('B站浏览账本损坏');
@@ -30,7 +31,7 @@ export function createBilibiliState({stateDir,now=Date.now,atomicWrite=atomicUti
  const target=(key,s=read())=>s.targets[key]||{enabled:false,interval:180,start:20,end:24,dueAt:0};
  function readCount(s=read()){return s.reads.filter(r=>r.day===biliDay(now())).length;}
  function shareCount(key,s=read()){return s.shares.filter(r=>r.sourceKey===key&&r.automatic&&r.status!=='failed'&&r.day===biliDay(now())).length;}
- function shareLimit(key,s=read()){return key.startsWith('group:')?s.limits.groupDaily:s.limits.privateDaily;}
+ function shareLimit(key,s=read()){return target(key,s).dailyLimit??(key.startsWith('group:')?s.limits.groupDaily:s.limits.privateDaily);}
  function wasShared(key,bvid,s=read()){return s.shares.some(r=>r.sourceKey===key&&r.bvid===bvid&&r.automatic&&r.status!=='failed'&&now()-r.at<7*86400000);}
  function reserveRead({bvid,roleVersion}){
   return update(s=>{if(readCount(s)>=Math.min(6,s.limits.browseDaily))throw Error('B站每日浏览深读额度已满');

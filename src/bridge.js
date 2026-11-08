@@ -159,6 +159,7 @@ import { createUtilities, UTILITIES_HELP } from './utilities.js';
 import {createWorkbench, workbenchReply, workbenchContext} from './workbench-http.js';
 import {createWorkbenchStore} from './workbench-store.js';
 import {createWorkbenchSettings, applyWorkbenchConfigPatch} from './workbench-settings.js';
+import {createBilibiliState} from './bilibili-state.js';
 import {selectBilibiliTargets} from './bilibili-proactive.js';
 import {createBilibiliBridge,isPublicBilibiliVideo} from './bilibili-bridge.js';
 import {bilibiliShareSegments,verifyBilibiliShareDelivery} from './bilibili-card.js';
@@ -4461,6 +4462,8 @@ async function main() {
     };
 
     const workbenchAdministration = createWorkbenchSettings({
+      videoState: createBilibiliState({stateDir: STATE_DIR, atomicWrite: atomicWriteJson}),
+      getVideoTargets: () => selectBilibiliTargets({ownerQQ: cfg.ownerQQ, privateIds: cfg.allow?.private ?? cfg.allow?.privates ?? [], groupIds: cfg.allow?.group ?? cfg.allow?.groups ?? [], conversations: socialV2.conversations, isAllowed: isSessionAllowedInCurrentMode}),
       getConfig: () => cfg, states: () => socialV2.conversations, getState: getSocialV2State, saveStates: () => saveSocialV2State(true),
       voiceProfiles: voiceProfileListV2, defaultVoice: defaultVoiceProfileIdV2, environment: process.env,
       defaults: {visionModel: QWEN_VL_DEFAULT_MODEL, ttsModel: TTS_DEFAULT_MODEL, asrModel: 'qwen3-asr-flash', chatModel: 'deepseek-flash', doubaoImageModel: DOUBAO_IMAGE_MODEL.id},

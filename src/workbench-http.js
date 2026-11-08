@@ -111,7 +111,7 @@ export function createWorkbench({root, stateDir, store, api, execute, facts, red
       const activeRefs=new Set([...rows.values()].map(r=>r.ref));
       if(selected==='all')records.push(...Object.entries(index.refs||{}).slice(-200).filter(([ref])=>!activeRefs.has(ref)).map(([ref,r])=>({ref,at:r.lastAt,kind:'indexed'})));
       const list=listing(records);
-      return {listing:list,entries:list.items.filter(r=>r.kind==='watched'),receipts:list.items.filter(r=>r.kind==='indexed').map(({ref,at})=>({ref,at})),shares:list.items.filter(r=>r.kind==='shared'),limits:ctl.limits,targets:Object.fromEntries(Object.entries(ctl.targets||{}).filter(([k])=>matches(k,selected))),preferences:store.preferences()};
+      return {listing:list,entries:list.items.filter(r=>r.kind==='watched'),receipts:list.items.filter(r=>r.kind==='indexed').map(({ref,at})=>({ref,at})),shares:list.items.filter(r=>r.kind==='shared'),videoScopes:administration ? administration.read().scopes.filter(r=>matches(r.key,selected)) : [],limits:ctl.limits,targets:Object.fromEntries(Object.entries(ctl.targets||{}).filter(([k])=>matches(k,selected))),preferences:store.preferences()};
     }
     if (tab === 'roles') return api('/api/roles');
     if (tab === 'role') return api('/api/roles/content?name=' + encodeURIComponent(selected));
@@ -144,7 +144,7 @@ export function createWorkbench({root, stateDir, store, api, execute, facts, red
   async function action(b) {
     const f = facts(), ownerKey = `private:${f.ownerQQ}`;
     const target = () => scope(b.key);
-    if (['scope.add','scope.enabled','scope.proactive','scope.voice','capability.toggle','service.vision','service.voice-default'].includes(b.action)) {
+    if (['scope.add','scope.enabled','scope.proactive','scope.video','scope.video-limit','scope.voice','capability.toggle','service.vision','service.voice-default'].includes(b.action)) {
       if (!administration) fail('机器人配置尚未连接', 503);
       const {action: name, requestId, ...input} = b;return administration.update(name, input);
     }

@@ -172,7 +172,7 @@ async function submitAction(body, confirmation, trigger) {
 }
 function form(action, fields, label = '保存', confirmation, values = {}) {
   const n = el('form', {class: 'form-grid'}, fields, el('div', {class: 'actions'}, el('button', {type: 'submit', class: 'primary'}, label)));
-  n.addEventListener('submit', async event => { event.preventDefault(); const button = n.querySelector('button[type=submit]'); button.disabled = true; let data = {action, ...values, ...Object.fromEntries(new FormData(n))}; if (action === 'command.run') data = {action, commandId: values.commandId, args: Object.fromEntries(new FormData(n)), confirmed: true}; if (action === 'video.enabled') data.enabled = data.enabled === 'true'; try { await submitAction(data, typeof confirmation === 'function' ? confirmation(data.args || data) : confirmation,button); } finally { button.disabled = false; } });
+  n.addEventListener('submit', async event => { event.preventDefault(); const button = n.querySelector('button[type=submit]'); button.disabled = true; let data = {action, ...values, ...Object.fromEntries(new FormData(n))}; if (action === 'command.run') data = {action, commandId: values.commandId, args: Object.fromEntries(new FormData(n)), confirmed: true}; if (action === 'video.enabled') data.enabled = data.enabled === 'true'; if (action === 'scope.video-limit') {data.dailyLimit = data.limitMode === 'default' ? null : Number(data.dailyLimit); delete data.limitMode;} try { await submitAction(data, typeof confirmation === 'function' ? confirmation(data.args || data) : confirmation,button); } finally { button.disabled = false; } });
   return n;
 }
 function actionButton(label, action, values, confirmation) { return el('button', {type: 'button', onclick: event => { const n = event.currentTarget; n.disabled = true; submitAction({action, ...values}, confirmation,n).finally(() => {n.disabled = false;}); }}, label); }
@@ -276,6 +276,22 @@ function videoForms() {
   return [panel('指定一个视频', form('video.share', [targetField(), field('视频链接或 BV 号', 'video', {placeholder: 'https://www.bilibili.com/video/BV…'})], '分享图文到 QQ', '将指定视频以普通图文发送到所选 QQ 会话。不会自动重发。'), el('p', {class: 'small muted'}, '仅分享标题、封面和链接。需要先分析再分享时，使用下方入口。'), form('video.watch', [targetField(), field('先观看的视频', 'video')], '观看后分享到 QQ', '将采样分析视频并分享到所选 QQ 会话，可能产生模型费用并占用原有额度。')),
     panel('主动浏览', form('video.enabled', [targetField(), field('自动浏览', 'enabled', {options: [['false', '关闭'], ['true', '开启']]})], '更新浏览开关', '更改所选会话的自动浏览设置？'), form('video.interval', [targetField(), field('间隔分钟（30–1440）', 'minutes', {type: 'number', value: '180'})], '设置间隔'), form('video.hours', [targetField(), field('北京时间整点时段', 'hours', {value: '20:00-24:00'})], '设置时段'))];
 }
+function videoScopeSwitch(scope) {
+  return el('div', {class: 'scope-setting'}, el('span', {}, '主动发视频'), switchControl(contactLabel(scope.key) + '的主动视频', scope.video.enabled, enabled => submitAction({action: 'scope.video', key: scope.key, revision: scope.revision, enabled}), !scope.enabled));
+}
+function videoScopeSettings(scopes) {
+  const rows = scopes.filter(scope => scope.video?.available).map(scope => {
+    const mode = field('每日上限方式', 'limitMode', {value: scope.video.dailyLimit === null ? 'default' : 'custom', options: [['default', '跟随私聊／群聊默认值'], ['custom', '单独设置此会话']]});
+    const count = field('每日主动视频上限（0–100）', 'dailyLimit', {type: 'number', value: String(scope.video.dailyLimit ?? scope.video.effectiveLimit)});
+    const input = count.querySelector('input'); input.min = '0'; input.max = '100'; input.step = '1';
+    const editor = form('scope.video-limit', [mode, count], '保存每日上限', undefined, {key: scope.key, revision: scope.revision});
+    const updateMode = () => {input.disabled = mode.querySelector('select').value === 'default' || !scope.enabled;};
+    mode.querySelector('select').addEventListener('change', updateMode); updateMode();
+    if (!scope.enabled) editor.querySelectorAll('select,button').forEach(n => n.disabled = true);
+    return el('article', {class: 'scope-card video-scope', 'data-key': scope.key}, el('h3', {}, scope.owner ? '管理员本人' : contactLabel(scope.key)), videoScopeSwitch(scope), el('p', {class: 'muted small'}, '今日已用 ' + scope.video.used + ' / ' + scope.video.effectiveLimit + ' 条 · ' + scope.video.status), editor);
+  });
+  return panel('每个会话的主动视频', el('p', {class: 'muted small'}, '与档案中的会话开关同步。北京时间每日计数，0 暂停；手动指定分享不占主动额度。上限不是发送次数承诺，仍受选片、时段和全局每日深读最多6条约束。'), rows.length ? rows : empty('暂无可管理会话', '请先在樱良档案加入白名单会话。'));
+}
 function renderVideos(d) {
   const item=r=>{
     if(r.kind==='watched')return record(r.title||r.ref,r.at,r.key,[r.cover?el('img',{src:r.cover,alt:'',class:'video-cover',loading:'lazy',referrerpolicy:'no-referrer'}):null,text(r.coverage),r.summary?details('观看资料',r.summary):text('未留存观看正文。'),el('a',{href:'https://www.bilibili.com/video/'+r.ref.split(':')[0],target:'_blank',rel:'noopener noreferrer'},'查看原视频')],[tag('观看资料'),tag('保留至 '+time(r.expiresAt))],'video-record');
@@ -284,7 +300,7 @@ function renderVideos(d) {
     return record('选片与感想',r.at,r.key,[text(r.detail||statusName(r.status)),(r.candidates||[]).map(c=>text(c.title||c.bvid))],[tag('选片记录')],'video-record');
   };
   const preferences=form('preferences.save',[field('想多看什么','include',{type:'textarea',required:false,value:d.preferences.include,max:300}),field('少看什么','avoid',{type:'textarea',required:false,value:d.preferences.avoid,max:300})],'保存选片偏好');
-  return el('div',{class:'layout video-page'},pagedList(d,[['watched','观看资料'],['shared','分享记录'],['selection','选片与感想'],['indexed','历史视频索引']],item,{before:[el('p',{class:'muted small'},'按实际分析或分享时间筛选；观看正文保留 72 小时，翻页不会重新分析视频。')]}),el('aside',{},panel('引导她选片',preferences),panel('当前设置',details('计划与限额',{targets:d.targets,limits:d.limits})),el('details',{class:'video-actions'},el('summary',{},'分享与浏览操作'),videoForms())));
+  return el('div',{class:'layout video-page'},el('div', {}, videoScopeSettings(d.videoScopes || []), pagedList(d,[['watched','观看资料'],['shared','分享记录'],['selection','选片与感想'],['indexed','历史视频索引']],item,{before:[el('p',{class:'muted small'},'按实际分析或分享时间筛选；观看正文保留 72 小时，翻页不会重新分析视频。')]})),el('aside',{},panel('引导她选片',preferences),panel('当前设置',details('计划与限额',{targets:d.targets,limits:d.limits})),el('details',{class:'video-actions'},el('summary',{},'分享与浏览操作'),videoForms())));
 }
 function renderMemory(d) {
   const types={note:'私人待办',todo:'截图待办',task:'提醒与定时任务',saved:'明确保存的回忆',conversation:'会话记忆'};
@@ -564,7 +580,9 @@ function renderProfile(data) {
         el('span', {class: 'scope-enabled-label'}, scope.enabled ? '已启用' : '已停用')),
       el('div', {class: 'scope-settings'},
         el('div', {class: 'scope-setting'}, el('span', {}, '白名单会话'), switchControl(label + '的会话开关', scope.enabled, enabled => submitAction({action: 'scope.enabled', enabled, ...values}, `确定${enabled ? '启用' : '停用'}「${label}」？记忆与记录会保留。`), scope.owner && scope.enabled)),
-        el('div', {class: 'scope-setting'}, el('span', {}, '自动主动问候'), switchControl(label + '的主动问候', scope.proactive, enabled => submitAction({action: 'scope.proactive', enabled, ...values}), !scope.enabled))),
+        el('div', {class: 'scope-setting'}, el('span', {}, '自动主动问候'), switchControl(label + '的主动问候', scope.proactive, enabled => submitAction({action: 'scope.proactive', enabled, ...values}), !scope.enabled)),
+        scope.video?.available ? videoScopeSwitch(scope) : null),
+      scope.video?.available ? el('p', {class: 'muted small'}, '主动视频：今日 ' + scope.video.used + ' / ' + scope.video.effectiveLimit + ' 条 · ' + scope.video.status + '；每日上限可在视频页调整。') : null,
       el('p', {class: 'scope-policy muted small'}, scope.proactiveStatus), voice,
       el('p', {class: 'muted small'}, '当前声线：' + scope.voiceLabel + ' · 主模型沿用全局配置'), talk);
   });

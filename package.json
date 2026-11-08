@@ -21,7 +21,7 @@
     "check:history": "node scripts/release-check.mjs --history",
     "hooks:install": "git config core.hooksPath .githooks",
     "test:faces": "node --test scripts/test-qq-faces.mjs scripts/test-qq-face-semantics.mjs",
-    "test:workbench": "node --test scripts/test-workbench.mjs scripts/test-workbench-bridge.mjs scripts/test-workbench-settings.mjs scripts/test-workbench-mysql-auth.mjs scripts/test-botwork-server.mjs scripts/test-workbench-portrait.mjs scripts/test-public-deployment.mjs",
+    "test:workbench": "node --test scripts/test-workbench.mjs scripts/test-workbench-bridge.mjs scripts/test-workbench-settings.mjs scripts/test-workbench-mysql-auth.mjs scripts/test-botwork-server.mjs scripts/test-workbench-portrait.mjs scripts/test-public-deployment.mjs scripts/test-workbench-video-scopes.mjs scripts/test-workbench-profile-bridge.mjs",
     "test:video": "node --test scripts/test-bilibili-card.mjs scripts/test-bilibili-experience.mjs scripts/test-video-retention.mjs",
     "workbench:account": "node --env-file-if-exists=.env scripts/workbench-account.mjs",
     "workbench:preview": "node scripts/workbench-preview.mjs"

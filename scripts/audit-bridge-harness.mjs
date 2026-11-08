@@ -46,6 +46,7 @@ import * as ownerToolsModule from '../src/owner-tools.js';
 import * as companionModule from '../src/companion.js';
 import * as utilitiesModule from '../src/utilities.js';
 import * as workbenchModule from '../src/workbench-http.js';
+import * as bilibiliStateModule from '../src/bilibili-state.js';
 import * as workbenchSettingsModule from '../src/workbench-settings.js';
 import * as workbenchStoreModule from '../src/workbench-store.js';
 import * as privateReportModule from '../src/private-report-guard.js';
@@ -581,7 +582,7 @@ export async function bridgeHarness({ config = {}, savedState, files = {}, globa
     discoverDshLaunchToken: () => '', unwrap, createTurnCollector,
     discoverDshBaseUrl: async () => null,
     resolveInstalledPreset, synchronizePreset, renderPatch,
-    ...ownerCommandCatalogModule, ...workbenchPortraitModule, ...workbenchRecordsModule,...waitBudgetModule, ...workbenchServerModule, ...workbenchModule, ...workbenchSettingsModule, ...workbenchStoreModule, ...mediaNormalize, ...voiceExpression, ...bilibiliBridgeModule,...bilibiliCardModule, ...bilibiliProactiveModule, ...bilibiliTextModule, ...utilityContentModule,
+    ...ownerCommandCatalogModule, ...workbenchPortraitModule, ...workbenchRecordsModule,...waitBudgetModule, ...workbenchServerModule, ...workbenchModule, ...bilibiliStateModule, ...workbenchSettingsModule, ...workbenchStoreModule, ...mediaNormalize, ...voiceExpression, ...bilibiliBridgeModule,...bilibiliCardModule, ...bilibiliProactiveModule, ...bilibiliTextModule, ...utilityContentModule,
     isPublicBilibiliVideo: async () => false, // No anonymous network probes in isolated tests.
     ...markdown, ...sensitive, ...wait, ...safeFetch, ...forward, ...slang, ...sticker, ...qzone, ...groupChat, ...qzoneSocial, ...qzoneFeedQuery, ...qzoneProfileLike, ...friendRequests, ...friendViews, ...ownerCommandGuide, ...ownerConsole, ...ownerInspect, ...qqFaces, ...whitelistCommands, ...ownerExtra, ...ownerActions, ...ownerToolsModule, ...ownerSummaryModule, ...commandArgs, ...targetResolve, ...timeParse, ...proactivePolicy, ...proactiveTopics, ...qwenVl, ...groupViews, ...adminActions,
     ...modelPrices, ...tokenLedger, ...voiceLib, ...stateAcl,

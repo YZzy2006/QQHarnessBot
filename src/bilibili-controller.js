@@ -50,7 +50,7 @@ export function createBilibiliController(d){
  function status(key){
   const s=state.read(),t=state.target(key,s),a=d.login.status();
   return '【B站状态】\n'+(a.loggedIn?'已保存登录态（是否有效以实际读取为准）':'未登录')+'\nB站评论/回复/私信/动态/点赞/投币/关注：禁用\n当前QQ人物卡：'+(d.getRoleSnapshot?.()?.name||'未设置')+
-   '\n自动浏览：'+(t.enabled?'开启':'关闭')+'｜'+(t.schedule==='daily'?'按日随机计划':'每'+t.interval+'分钟')+'｜北京时间'+t.start+':00–'+t.end+':00\n每日主动分享上限：每私聊'+s.limits.privateDaily+'条、每群'+s.limits.groupDaily+'条；本会话今日已占用'+state.shareCount(key,s)+'条\n刷视频深读：今日'+state.readCount(s)+'/'+Math.min(6,s.limits.browseDaily)+'条（刷B站手动与自动共用；用户来信视频另计每私聊6条/每群9条）\n手动指定分享不占主动额度，仍受QQ发送限流。\n'+(d.sourceStatus?.()||'')+
+   '\n自动浏览：'+(t.enabled?'开启':'关闭')+'｜'+(t.schedule==='daily'?'按日随机计划':'每'+t.interval+'分钟')+'｜北京时间'+t.start+':00–'+t.end+':00\n每日主动分享上限：每私聊'+s.limits.privateDaily+'条、每群'+s.limits.groupDaily+'条；本会话上限'+state.shareLimit(key,s)+'条，今日已占用'+state.shareCount(key,s)+'条\n刷视频深读：今日'+state.readCount(s)+'/'+Math.min(6,s.limits.browseDaily)+'条（刷B站手动与自动共用；用户来信视频另计每私聊6条/每群9条）\n手动指定分享不占主动额度，仍受QQ发送限流。\n'+(d.sourceStatus?.()||'')+
    (busy?'\n当前有B站任务处理中。':'');
  }
  async function target(raw,ctx){
@@ -67,7 +67,7 @@ export function createBilibiliController(d){
   if(!enabled()||!d.isAllowed(ctx.sourceKey)||!d.isAllowed(payload.targetKey||ctx.sourceKey))throw Error('当前会话权限已关闭');
   const account=d.getAccountVersion?.(),ver=roleVersion(),ep=epoch(ctx.sourceKey),revision=state.read().revision,dest=payload.targetKey||ctx.sourceKey,targetEp=epoch(dest);
   if(!ver)throw Error('当前QQ没有有效人物卡，未启动浏览或分享');
-  const stillSelected=()=>{if(!payload.automatic||!state.read().autoSelect)return true;const selected=d.getProactiveTargets?.();return Array.isArray(selected)&&selected.includes(dest);};
+  const stillSelected=()=>{if(!payload.automatic)return true;const s=state.read(),t=state.target(dest,s);if(!t.enabled||state.shareLimit(dest,s)===0)return false;if(!s.autoSelect||t.manualSelect===true)return true;const selected=d.getProactiveTargets?.();return Array.isArray(selected)&&selected.includes(dest);};
   const authorize=()=>stillSelected()&&enabled()&&d.isAllowed(ctx.sourceKey)&&d.isAllowed(dest)&&epoch(ctx.sourceKey)===ep&&epoch(dest)===targetEp&&roleVersion()===ver&&d.getAccountVersion?.()===account&&state.read().revision===revision;
   busy=true;try{return await d[kind](ctx,{...payload,authorize});}finally{busy=false;}
  }
@@ -110,7 +110,7 @@ export function createBilibiliController(d){
    if(c==='B站浏览'){
     if(!['开启','关闭','开','关'].includes(a[0]))throw Error('[B站浏览][开启/关闭][目标可选]');
     const on=['开启','开'].includes(a[0]);if(!on)cancel(key);
-    state.update(s=>{s.targets[key]={...state.target(key,s),enabled:on,dueAt:on?now()+state.target(key,s).interval*60000:0};},{settings:true});
+    state.update(s=>{s.targets[key]={...state.target(key,s),enabled:on,manualSelect:on,dueAt:on?now()+state.target(key,s).interval*60000:0};},{settings:true});
    }else if(c==='B站频率'){
     const n=Number(a[0]);if(!/^\d+$/.test(a[0])||!Number.isInteger(n)||n<30||n>1440)throw Error('频率须为30–1440分钟的整数');
     state.update(s=>{s.targets[key]={...state.target(key,s),interval:n,schedule:'interval',plan:undefined,dueAt:now()+n*60000};},{settings:true});
@@ -131,7 +131,7 @@ export function createBilibiliController(d){
     if(missing.length)state.update(v=>{for(const key of missing)v.targets[key]={...state.target(key,v),enabled:true,schedule:'daily'};});
     s=state.read();
    }
-   const eligible=Object.entries(s.targets).filter(([key,t])=>t.enabled&&(!selected||selected.has(key))&&d.isAllowed(key)&&state.shareCount(key,s)<state.shareLimit(key,s));
+   const eligible=Object.entries(s.targets).filter(([key,t])=>t.enabled&&(!selected||selected.has(key)||t.manualSelect===true)&&d.isAllowed(key)&&state.shareCount(key,s)<state.shareLimit(key,s));
    for(const[key,t]of eligible)if(t.schedule==='daily'&&t.plan?.day!==biliDay(now())){
     const plan=dailyBilibiliPlan(key,t,{now:now(),random:d.random||Math.random,limit:state.shareLimit(key,s)});
     state.update(v=>{if(v.targets[key])v.targets[key].plan=plan;});
