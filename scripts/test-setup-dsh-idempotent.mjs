@@ -4,15 +4,23 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { dshModulesDir } from './dsh-modules.mjs';
+import { fileURLToPath } from 'node:url';
+import yaml from 'js-yaml';
 
-const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const SOURCE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // 夹具放系统临时目录，**不要**放仓库的 state/：harden-state-acl.mjs 会把 state/ 的
 // 继承 ACE 去掉（只留当前用户 / SYSTEM / Administrators），于是 DSH 沙箱的能力 SID
 // 不在 ACL 里，在沙箱内跑这个测试会直接 EPERM 建目录。
-const tmpHome = path.join(os.tmpdir(), 'qq-bridge-setup-test-home');
-fs.rmSync(tmpHome, { recursive: true, force: true });
+const tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'qqharness-setup-test-'));
+const tmpHome = path.join(tmpBase, 'dsh');
+const ROOT = path.join(tmpBase, 'project');
+fs.mkdirSync(path.join(ROOT, 'scripts'), { recursive: true });
+for (const name of ['setup-dsh.mjs', 'build-agent-preset-patches.mjs']) {
+  fs.copyFileSync(path.join(SOURCE_ROOT, 'scripts', name), path.join(ROOT, 'scripts', name));
+}
+for (const name of ['plugins', 'dsh']) fs.cpSync(path.join(SOURCE_ROOT, name), path.join(ROOT, name), { recursive: true });
+fs.copyFileSync(path.join(SOURCE_ROOT, 'package.json'), path.join(ROOT, 'package.json'));
+fs.symlinkSync(path.join(SOURCE_ROOT, 'node_modules'), path.join(ROOT, 'node_modules'), 'junction');
 fs.mkdirSync(path.join(tmpHome, 'profiles', 'web'), { recursive: true });
 fs.mkdirSync(path.join(tmpHome, 'plugins'), { recursive: true });
 
@@ -63,8 +71,9 @@ function runSetup(label) {
   return r;
 }
 
-runSetup('第 1 次运行');
-runSetup('第 2 次运行');
+const firstRun = runSetup('第 1 次运行');
+const secondRun = runSetup('第 2 次运行');
+if (firstRun.status !== 0 || secondRun.status !== 0) throw new Error('隔离setup两次执行必须均成功');
 
 const finalPatch = fs.readFileSync(path.join(tmpHome, 'profiles', 'web', 'cordis.patch.yml'), 'utf8');
 
@@ -88,8 +97,6 @@ console.log(`${hasBareArray ? '❌' : '✅'} 无独立成行的空数组 []`);
 if (hasBareArray) failed += 1;
 
 // 断言 4：YAML 可解析且顶层是数组
-const YAML = await import(pathToFileURL(path.join(dshModulesDir(), 'js-yaml/index.js')).href);
-const yaml = YAML.default ?? YAML;
 let doc;
 try { doc = yaml.load(finalPatch); } catch (e) {
   console.log(`❌ YAML 解析失败: ${e.message}`); failed += 1;
@@ -127,4 +134,5 @@ console.log(`${legacyDir && !fs.existsSync(legacyDir) ? '✅' : '❌'} 未创建
 if (fs.existsSync(legacyDir)) failed += 1;
 
 console.log(failed === 0 ? '\n✅ setup-dsh.mjs 幂等性测试通过' : `\n❌ ${failed} 项失败`);
+fs.rmSync(tmpBase, { recursive: true, force: true });
 process.exit(failed === 0 ? 0 : 1);
