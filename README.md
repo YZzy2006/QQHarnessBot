@@ -278,7 +278,7 @@ QQHarnessBot/
 
 ## 📖 配套工作台
 
-[QQHarnessWorkbench](https://github.com/YZzy2006/QQHarnessWorkbench) 初始设为私有，需要仓库访问权限；主仓库已经保留相同的`public/workbench*`、`src/workbench-*`和`deploy/botwork`，没有另仓权限也可以部署匹配版本。
+[QQHarnessWorkbench](https://github.com/YZzy2006/QQHarnessWorkbench) 已公开开源，可直接克隆。主仓库也保留相同的`public/workbench*`、`src/workbench-*`和`deploy/botwork`，支持按同一匹配版本进行单仓或分仓部署。
 
 在本仓库内运行网关：
 

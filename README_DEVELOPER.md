@@ -132,9 +132,9 @@ npm run check:history
 Python账号初始化工具是可选便利入口；如果机器没有Python3，使用同目录Node账号CLI的安全stdin接口，不把密码加在命令行。源码/主题不包含任何默认可登录密码。
 
 
-### 配套仓库访问权限
+### 单仓与分仓部署
 
-独立工作台仓库初始为私有，克隆需要有权访问的GitHub账号。没有访问权限时，公开QQHarnessBot主仓库也包含匹配的界面和网关：在主仓库的`deploy/botwork`目录运行`npm ci && npm start`，Nginx静态root指向主仓库`public/`，首页仍是`workbench.html`。不要为了下载源码索要或共享维护者的GitHub令牌。
+QQHarnessBot与QQHarnessWorkbench均为公开开源仓库，可直接克隆。使用单仓部署时，QQHarnessBot主仓库也包含匹配的界面和网关：在主仓库的`deploy/botwork`目录运行`npm ci && npm start`，Nginx静态root指向主仓库`public/`，首页仍是`workbench.html`。不要为了下载源码索要或共享维护者的GitHub令牌。
 
 
 ### Linux可选媒体依赖与中文结果卡片
