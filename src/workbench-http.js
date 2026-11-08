@@ -81,7 +81,15 @@ export function createWorkbench({root, stateDir, store, api, execute, facts, red
     }
     if (tab === 'contacts') {
       const fallback = [...allowed(), ...(administration ? administration.read().scopes.map(row => row.key) : [])];
-      try {const directory = contacts ? await contacts() : {};return {available: !!contacts, partial: directory.partial === true, entries: projectWorkbenchContacts(directory, fallback), message: directory.partial ? '部分联系人暂未读取，可用号码或刷新重试。' : ''};}
+      try {
+        const directory = contacts ? await contacts(params.get('fresh') === '1') : {}, managed = new Map((administration?.read().scopes || []).map(row=>[row.key,row]));
+        const entries = projectWorkbenchContacts(directory, fallback).map(row=>{
+          const known = !!contacts && (row.kind === 'private' ? Array.isArray(directory.friends) && (directory.friendsAvailable ?? !directory.partial) : Array.isArray(directory.groups) && (directory.groupsAvailable ?? !directory.partial));
+          const setting = managed.get(row.key), current = row.current === true ? true : known ? false : null;
+          return {...row, current, managed: !!setting, owner: row.key === ownerKey, whitelisted: setting?.enabled === true, revision: setting?.revision || '', removable: !!setting && row.key !== ownerKey && current === false};
+        });
+        return {available: !!contacts, partial: directory.partial === true, entries, message: directory.partial ? '部分联系人暂未读取，未确认的条目不能清理。' : ''};
+      }
       catch {return {available: false, entries: projectWorkbenchContacts({}, fallback), message: '联系人暂时读取失败，可刷新重试。'};}
     }
     if (tab === 'commands') return readOwnerCommandCatalog();
@@ -144,7 +152,7 @@ export function createWorkbench({root, stateDir, store, api, execute, facts, red
   async function action(b) {
     const f = facts(), ownerKey = `private:${f.ownerQQ}`;
     const target = () => scope(b.key);
-    if (['scope.add','scope.enabled','scope.proactive','scope.video','scope.video-limit','scope.voice','capability.toggle','service.vision','service.voice-default'].includes(b.action)) {
+    if (['scope.add','scope.remove','scope.enabled','scope.proactive','scope.video','scope.video-limit','scope.voice','capability.toggle','service.vision','service.voice-default'].includes(b.action)) {
       if (!administration) fail('机器人配置尚未连接', 503);
       const {action: name, requestId, ...input} = b;return administration.update(name, input);
     }

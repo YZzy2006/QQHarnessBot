@@ -22,7 +22,7 @@ const switches = {
 
 // Administrator projection: never serialize config/state objects or provider credentials.
 export function createWorkbenchSettings({getConfig, persist, states, getState, saveStates, voiceProfiles, defaultVoice,
-  environment = {}, defaults = {}, status = () => ({}), videoState = null, getVideoTargets = () => [], now = Date.now}) {
+  environment = {}, defaults = {}, status = () => ({}), videoState = null, getVideoTargets = () => [], isContactAbsent = async () => false, now = Date.now}) {
   const ids = list => [...new Set((Array.isArray(list) ? list : []).map(String).filter(id => /^[1-9]\d{0,11}$/.test(id)))];
   // Match allowed(): the singular field takes precedence if both spellings exist.
   const listField = (cfg, section, kind) => {
@@ -63,7 +63,7 @@ export function createWorkbenchSettings({getConfig, persist, states, getState, s
       return {video: {available: !!video, enabled: videoEnabled, dailyLimit: target?.dailyLimit ?? null, effectiveLimit: videoLimit, used: video ? videoState.shareCount(key, video) : 0, status: videoStatus, selected: videoSelected}, key, id, kind, owner: isOwner, enabled, proactive, voiceProfile: voiceOverride || 'default', voiceLabel: selected?.label || '未配置',
         proactiveStatus: !enabled ? '会话已停用' : cfg.socialV2?.proactive?.enabled === false ? '全局主动问候已关闭' : describeProactiveBlock(reason),
         revision: revision({key, explicit, denied, proactive, voiceOverride, videoTarget: target, videoLimits: video?.limits, videoAutoSelect: video?.autoSelect})};
-    });
+    }).filter(row => row.owner || row.enabled || !(cfg.workbench?.archivedScopes || []).includes(row.key));
   }
   function read() {
     const cfg = getConfig(), flags = flagValues(cfg), live = status();
@@ -101,19 +101,33 @@ export function createWorkbenchSettings({getConfig, persist, states, getState, s
   async function update(action, input) {
     const cfg = getConfig();
     if (!plain(input)) reject('设置参数无效');
-    const fields = {'scope.add':['kind','id'],'scope.enabled':['key','revision','enabled'],'scope.proactive':['key','revision','enabled'],'scope.video':['key','revision','enabled'],'scope.video-limit':['key','revision','dailyLimit'],'scope.voice':['key','revision','profile'],'capability.toggle':['revision','id','enabled'],'service.vision':['revision','model'],'service.voice-default':['revision','profile']}[action];
+    const fields = {'scope.add':['kind','id'],'scope.remove':['key','revision','confirmed'],'scope.enabled':['key','revision','enabled'],'scope.proactive':['key','revision','enabled'],'scope.video':['key','revision','enabled'],'scope.video-limit':['key','revision','dailyLimit'],'scope.voice':['key','revision','profile'],'capability.toggle':['revision','id','enabled'],'service.vision':['revision','model'],'service.voice-default':['revision','profile']}[action];
     if (!fields || Object.keys(input).some(key => !fields.includes(key))) reject('设置字段无效');
     if (action === 'scope.add') {
       if (!['private', 'group'].includes(input.kind) || !/^[1-9]\d{4,11}$/.test(String(input.id || ''))) reject('请填写5–12位QQ号或群号');
       const key = input.kind + ':' + input.id, all = lists(cfg), kind = input.kind === 'private' ? 'private' : 'groups';
       const denied = input.kind === 'private' ? 'deniedPrivate' : 'deniedGroups';
-      await persist([{path: listPath(cfg, 'allow', kind), value: [...new Set([...all[kind], String(input.id)])].map(Number)}, {path: listPath(cfg, 'deny', kind), value: all[denied].filter(id => id !== String(input.id)).map(Number)}]);
+      await persist([{path: listPath(cfg, 'allow', kind), value: [...new Set([...all[kind], String(input.id)])].map(Number)}, {path: listPath(cfg, 'deny', kind), value: all[denied].filter(id => id !== String(input.id)).map(Number)}, {path:['workbench','archivedScopes'],value:(cfg.workbench?.archivedScopes || []).filter(k=>k!==key)}]);
       return {key, message: '已加入白名单'};
     }
     if (action.startsWith('scope.')) {
       const row = rows(cfg).find(r => r.key === input.key);
       if (!row) reject('该会话不在当前管理列表中', 403);
       if (input.revision !== row.revision) reject('该会话设置已变化，请刷新后重试', 409);
+      if (action === 'scope.remove') {
+        if (row.owner) reject('不能移除管理员本人的管理会话');
+        if (input.confirmed !== true) reject('请确认移除旧会话条目');
+        if (await isContactAbsent(row.key) !== true) reject('该联系人仍在好友或群聊列表中，不能按旧条目清理', 409);
+        if (rows(getConfig()).find(r=>r.key===row.key)?.revision !== input.revision) reject('会话设置已变化，请刷新后重试', 409);
+        const all = lists(cfg), kind = row.kind === 'private' ? 'private' : 'groups', denied = row.kind === 'private' ? 'deniedPrivate' : 'deniedGroups';
+        const allow = all[kind].filter(id=>id!==row.id), deny = [...new Set([...all[denied],row.id])];
+        if (cfg.allowAllWhenEmpty && all[kind].length && !allow.length) reject('不能移除最后一个白名单条目：当前空白名单会放行全部会话，请先关闭该模式');
+        const archived = [...new Set([...(cfg.workbench?.archivedScopes || []),row.key])];
+        if (archived.length > 10000) reject('旧会话管理索引已满');
+        // Keep a deny guard so old agent tokens cannot regain access. Memories and ledgers remain intact.
+        await persist([{path:listPath(cfg,'allow',kind),value:allow.map(Number)},{path:listPath(cfg,'deny',kind),value:deny.map(Number)},{path:['workbench','archivedScopes'],value:archived}]);
+        return {key:row.key,message:'已移除旧会话管理条目，聊天记忆与历史记录保留'};
+      }
       if (action === 'scope.enabled') {
         if (typeof input.enabled !== 'boolean') reject('开关必须是布尔值');
         if (row.owner && !input.enabled) reject('不能停用管理员本人的管理会话');

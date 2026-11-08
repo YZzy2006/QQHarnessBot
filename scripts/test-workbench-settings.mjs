@@ -5,7 +5,7 @@ function fixture(options={}) {
  const config={ownerQQ:12345,allow:{private:[12345,23456],groups:[34567]},deny:{private:[],groups:[]},allowAllWhenEmpty:true,dsh:{model:'chat-fixture',provider:'fixture-provider',authToken:'DO-NOT-EXPOSE'},vision:{model:'vision-fixture',fallbackEnabled:true},socialV2:{enabled:true,tools:{generateImage:true,unrelated:false},voice:{defaultProfile:'soft',ttsEnabled:true},proactive:{enabled:true,maxIdleDays:3}},unrelated:{keep:42}};
  const sessions=new Map([['group:34567',{voiceProfile:'bright',proactiveGreetingEnabled:true,lastIncomingAt:Date.now(),secret:'DO-NOT-EXPOSE-STATE'}]]);let writes=0,saves=0;
  const voices=[{id:'soft',label:'柔和',model:'tts-fixture',voice:'soft-voice'},{id:'bright',label:'明亮',model:'tts-fixture',voice:'bright-voice'}];
- const settings=createWorkbenchSettings({getConfig:()=>config,states:()=>sessions,getState:key=>{if(!sessions.has(key))sessions.set(key,{});return sessions.get(key);},saveStates:()=>saves++,voiceProfiles:()=>voices,defaultVoice:()=>config.socialV2.voice.defaultProfile,environment:{QWEN_API_KEY:'DO-NOT-EXPOSE-ENV',GAODE_WEB_API_KEY:'DO-NOT-EXPOSE-MAPS'},defaults:{doubaoImageModel:'image-fixture'},status:()=>({dshReady:true,role:'fixture-role'}),persist:async entries=>{if(options.fail)throw Error('disk failure');applyWorkbenchConfigPatch(config,entries);writes++;}});
+ const settings=createWorkbenchSettings({getConfig:()=>config,states:()=>sessions,getState:key=>{if(!sessions.has(key))sessions.set(key,{});return sessions.get(key);},saveStates:()=>saves++,isContactAbsent:options.isContactAbsent || (async()=>false),voiceProfiles:()=>voices,defaultVoice:()=>config.socialV2.voice.defaultProfile,environment:{QWEN_API_KEY:'DO-NOT-EXPOSE-ENV',GAODE_WEB_API_KEY:'DO-NOT-EXPOSE-MAPS'},defaults:{doubaoImageModel:'image-fixture'},status:()=>({dshReady:true,role:'fixture-role'}),persist:async entries=>{if(options.fail)throw Error('disk failure');applyWorkbenchConfigPatch(config,entries);writes++;}});
  return {config,sessions,settings,count:()=>({writes,saves}),row:key=>settings.read().scopes.find(r=>r.key===key)};
 }
 test('档案只投影能力/声线/服务配置，不初始化会话、不暴露凭据与原始状态',()=>{
@@ -65,4 +65,26 @@ test('会话写盘失败回退运行态，不留下新建会话或虚假的保�
 test('视频理解能力随真实视觉开关关闭，启用后恢复显示',async()=>{
  const f=fixture();f.config.vision.fallbackEnabled=false;assert.equal(f.settings.read().capabilities.find(c=>c.id==='video').enabled,false);
  f.config.vision.fallbackEnabled=true;assert.equal(f.settings.read().capabilities.find(c=>c.id==='video').enabled,true);
+});
+
+test('旧会话清理必须确认、重核关系、保护管理员，保留记忆并阻止旧权限',async()=>{
+ const f=fixture({isContactAbsent:async key=>key==='private:23456'}),key='private:23456';
+ f.config.allowAllWhenEmpty=false;f.sessions.set(key,{activeTopics:[{text:'保留的记忆'}]});const saved=structuredClone(f.sessions.get(key));
+ let row=f.row(key);await assert.rejects(f.settings.update('scope.remove',{key,revision:row.revision,confirmed:false}),/确认/);
+ const owner=f.row('private:12345');await assert.rejects(f.settings.update('scope.remove',{key:owner.key,revision:owner.revision,confirmed:true}),/管理员/);
+ const group=f.row('group:34567');await assert.rejects(f.settings.update('scope.remove',{key:group.key,revision:group.revision,confirmed:true}),/仍在/);
+ await f.settings.update('scope.remove',{key,revision:row.revision,confirmed:true});assert.equal(f.row(key),undefined);assert.ok(!f.config.allow.private.includes(23456));assert.ok(f.config.deny.private.includes(23456));assert.deepEqual(f.sessions.get(key),saved);assert.equal(f.count().saves,0);
+ await f.settings.update('scope.add',{kind:'private',id:'23456'});assert.equal(f.row(key).enabled,true);assert.ok(!f.config.deny.private.includes(23456));assert.ok(!f.config.workbench.archivedScopes.includes(key));
+});
+test('清理拒绝最后一项造成空名单放行，关系查询失败和并发修改不会移除',async()=>{
+ const f=fixture({isContactAbsent:async()=>true}),key='group:34567',row=f.row(key);
+ await assert.rejects(f.settings.update('scope.remove',{key,revision:row.revision,confirmed:true}),/空白名单/);assert.ok(f.row(key));
+ const g=fixture({isContactAbsent:async()=>{throw Error('unavailable');}}),old=g.row(key);await assert.rejects(g.settings.update('scope.remove',{key,revision:old.revision,confirmed:true}),/unavailable/);assert.ok(g.row(key));
+ let release,ready;const waiting=new Promise(r=>ready=r),gate=new Promise(r=>release=r),h=fixture({isContactAbsent:async()=>{ready();await gate;return true;}});h.config.allowAllWhenEmpty=false;
+ const revision=h.row(key).revision,pending=h.settings.update('scope.remove',{key,revision,confirmed:true});await waiting;await h.settings.update('scope.proactive',{key,revision,enabled:false});release();await assert.rejects(pending,/变化/);assert.ok(h.row(key));
+});
+test('已归档条目被原QQ白名单重新启用后可见；清理写盘失败不假成功',async()=>{
+ const f=fixture({isContactAbsent:async()=>true});f.config.allowAllWhenEmpty=false;const key='private:23456';await f.settings.update('scope.remove',{key,revision:f.row(key).revision,confirmed:true});
+ f.config.allow.private.push(23456);f.config.deny.private=[];assert.equal(f.row(key).enabled,true);
+ const g=fixture({isContactAbsent:async()=>true,fail:true});g.config.allowAllWhenEmpty=false;await assert.rejects(g.settings.update('scope.remove',{key,revision:g.row(key).revision,confirmed:true}),/disk failure/);assert.ok(g.row(key));assert.equal(g.config.workbench,undefined);
 });

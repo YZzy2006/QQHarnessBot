@@ -769,3 +769,13 @@ footer { margin-top: 28px; border-top-style: solid; border-top-color: #e0cba9; p
  .resource-card { padding:12px; }
  .resource-card strong { font-size:13px; }
 }
+
+/* Compact per-conversation controls and contact directory. */
+.video-scope-filters label { min-width: 0; }
+.contact-manager-list { display: grid; gap: 10px; }
+.contact-manager-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; border-bottom: 1px solid #ddc7a3; }
+.contact-manager-row > div { min-width: 0; overflow-wrap: anywhere; }
+.contact-manager-row h3 { margin: 0; font-size: 15px; }
+.contact-manager-row .actions { flex-wrap: wrap; justify-content: flex-end; }
+.contact-pagination { margin-top: 14px; align-items: center; }
+@media(max-width: 600px) { .profile-tabs { flex-wrap: wrap; } .profile-tabs button { flex-basis: calc(50% - 8px); } .contact-manager-row { align-items: flex-start; flex-direction: column; } .contact-manager-row .actions { justify-content: flex-start; } }

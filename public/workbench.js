@@ -119,7 +119,7 @@ async function request(path, body, method = body ? 'POST' : 'GET') {
   if (!res.ok || data.ok === false) throw Object.assign(Error(data.error || '请求未完成，请稍后重试'), {status: res.status});
   return data;
 }
-function showLogin() { window.WorkbenchControls.close();profileSection = 'capabilities';commandSelection = 'note';commandView = 'quick';commandCatalogSelection = '1';commandOperationSelections = {}; feedbackFilters = {status: 'all', kind: 'all', date: ''}; clearTimeout(serverAlarmTimer);serverPreview=null;listFilters={};selectedRole='';csrf = ''; overview = null; generation++; $('#app').hidden = true; $('#login-screen').hidden = false; $('#content').replaceChildren(); }
+function showLogin() { window.WorkbenchControls.close();profileSection = 'capabilities';videoScopeFilters={kind:'all',state:'all',query:'',key:''};contactFilters={kind:'all',membership:'all',whitelist:'all',query:'',page:0};commandSelection = 'note';commandView = 'quick';commandCatalogSelection = '1';commandOperationSelections = {}; feedbackFilters = {status: 'all', kind: 'all', date: ''}; clearTimeout(serverAlarmTimer);serverPreview=null;listFilters={};selectedRole='';csrf = ''; overview = null; generation++; $('#app').hidden = true; $('#login-screen').hidden = false; $('#content').replaceChildren(); }
 function showError(error) { $('#page-error').textContent = error.message || String(error); $('#page-error').hidden = false; }
 async function confirmAction(message, trigger=document.activeElement) {
   const dialog = $('#confirm-dialog'),position={x:scrollX,y:scrollY,tab,sequence:generation}; $('#confirm-text').textContent = message; dialog.returnValue = '';
@@ -279,8 +279,15 @@ function videoForms() {
 function videoScopeSwitch(scope) {
   return el('div', {class: 'scope-setting'}, el('span', {}, '主动发视频'), switchControl(contactLabel(scope.key) + '的主动视频', scope.video.enabled, enabled => submitAction({action: 'scope.video', key: scope.key, revision: scope.revision, enabled}), !scope.enabled));
 }
+let videoScopeFilters = {kind:'all',state:'all',query:'',key:''};
 function videoScopeSettings(scopes) {
-  const rows = scopes.filter(scope => scope.video?.available).map(scope => {
+  const all = scopes.filter(scope=>scope.video?.available);
+  const kind = field('视频会话类型','videoScopeKind',{value:videoScopeFilters.kind,options:[['all','全部会话'],['private','私聊'],['group','群聊']]});
+  const state = field('主动视频状态','videoScopeState',{value:videoScopeFilters.state,options:[['all','全部状态'],['on','已开启'],['off','已关闭']]});
+  const search = field('搜索视频会话','videoScopeSearch',{value:videoScopeFilters.query,required:false,placeholder:'好友备注、群名、别名或号码'});
+  const selected = field('选择要调整的会话','videoScopeKey',{required:false,options:[]}), select = selected.querySelector('select');
+  const status = el('p',{class:'muted small',role:'status'}), body=el('div',{class:'video-scope-detail'});
+  function renderCard(scope) {
     const mode = field('每日上限方式', 'limitMode', {value: scope.video.dailyLimit === null ? 'default' : 'custom', options: [['default', '跟随私聊／群聊默认值'], ['custom', '单独设置此会话']]});
     const count = field('每日主动视频上限（0–100）', 'dailyLimit', {type: 'number', value: String(scope.video.dailyLimit ?? scope.video.effectiveLimit)});
     const input = count.querySelector('input'); input.min = '0'; input.max = '100'; input.step = '1';
@@ -289,9 +296,23 @@ function videoScopeSettings(scopes) {
     mode.querySelector('select').addEventListener('change', updateMode); updateMode();
     if (!scope.enabled) editor.querySelectorAll('select,button').forEach(n => n.disabled = true);
     return el('article', {class: 'scope-card video-scope', 'data-key': scope.key}, el('h3', {}, scope.owner ? '管理员本人' : contactLabel(scope.key)), videoScopeSwitch(scope), el('p', {class: 'muted small'}, '今日已用 ' + scope.video.used + ' / ' + scope.video.effectiveLimit + ' 条 · ' + scope.video.status), editor);
-  });
-  return panel('每个会话的主动视频', el('p', {class: 'muted small'}, '与档案中的会话开关同步。北京时间每日计数，0 暂停；手动指定分享不占主动额度。上限不是发送次数承诺，仍受选片、时段和全局每日深读最多6条约束。'), rows.length ? rows : empty('暂无可管理会话', '请先在樱良档案加入白名单会话。'));
+  }
+  function paint(reset=false) {
+    videoScopeFilters.kind=kind.querySelector('select').value;videoScopeFilters.state=state.querySelector('select').value;videoScopeFilters.query=search.querySelector('input').value;
+    const query=videoScopeFilters.query.trim().toLocaleLowerCase();
+    const matches=all.filter(scope=>(videoScopeFilters.kind==='all'||scope.kind===videoScopeFilters.kind)&&(videoScopeFilters.state==='all'||scope.video.enabled===(videoScopeFilters.state==='on'))&&contactText(scope.key).includes(query));
+    if(!matches.some(scope=>scope.key===videoScopeFilters.key))videoScopeFilters.key=matches[0]?.key||'';
+    select.replaceChildren(...matches.map(scope=>el('option',{value:scope.key,...(scope.key===videoScopeFilters.key?{selected:''}:{})},(scope.owner?'管理员本人':contactLabel(scope.key))+' · '+(scope.video.enabled?'主动视频已开':'主动视频已关'))));select.disabled=!matches.length;
+    status.textContent='匹配 '+matches.length+' / '+all.length+' 个会话，一次只显示当前选中的设置。';
+    const scope=matches.find(row=>row.key===videoScopeFilters.key);body.replaceChildren(scope?renderCard(scope):empty('没有匹配的会话','调整类型、状态或搜索内容。'));
+    window.WorkbenchControls?.enhance();window.WorkbenchControls?.sync();
+  }
+  for(const node of [kind.querySelector('select'),state.querySelector('select')])node.addEventListener('change',()=>paint(true));
+  search.querySelector('input').addEventListener('input',()=>paint(true));select.addEventListener('change',()=>{videoScopeFilters.key=select.value;paint();});paint();
+  return panel('主动视频设置',el('div',{class:'scope-filter-row video-scope-filters'},kind,state,search,selected),status,body,
+    el('details',{class:'small muted'},el('summary',{},'限额如何计算'),'与档案会话开关同步。北京时间每日计数，0 暂停；手动指定分享不占主动额度。仍受浏览时段、选片和全局每日深读最多6条约束。'));
 }
+
 function renderVideos(d) {
   const item=r=>{
     if(r.kind==='watched')return record(r.title||r.ref,r.at,r.key,[r.cover?el('img',{src:r.cover,alt:'',class:'video-cover',loading:'lazy',referrerpolicy:'no-referrer'}):null,text(r.coverage),r.summary?details('观看资料',r.summary):text('未留存观看正文。'),el('a',{href:'https://www.bilibili.com/video/'+r.ref.split(':')[0],target:'_blank',rel:'noopener noreferrer'},'查看原视频')],[tag('观看资料'),tag('保留至 '+time(r.expiresAt))],'video-record');
@@ -538,6 +559,39 @@ function portraitEditor(data, portrait) {
       data.portrait?actionButton('移除当前头像','portrait.clear',{},'移除工作台当前头像？OSS中的原图会保留。'):null),status);
 }
 
+let contactFilters={kind:'all',membership:'all',whitelist:'all',query:'',page:0};
+function applyContactDirectory(directory) {
+  contactDirectoryMessage=directory.message || (directory.available===false?'联系人暂未读取，可点击刷新重试。':'');
+  contactEntries=directory.entries || [];contactLookup=new Map(contactEntries.map(row=>[row.key,row]));
+}
+function renderContactManager() {
+  const kind=field('联系人类型','contactKind',{value:contactFilters.kind,options:[['all','全部类型'],['private','好友'],['group','群聊']]});
+  const membership=field('好友和群聊关系','contactMembership',{value:contactFilters.membership,options:[['all','全部关系'],['current','仍是好友／仍在群'],['stale','已非好友／已不在群'],['unknown','暂未确认']]});
+  const whitelist=field('白名单状态','contactWhitelist',{value:contactFilters.whitelist,options:[['all','全部白名单状态'],['on','白名单已开启'],['off','未开启白名单']]});
+  const search=field('搜索好友与群聊','contactSearch',{value:contactFilters.query,required:false,placeholder:'备注、昵称、群名、别名或号码'});
+  const summary=el('p',{class:'muted small',role:'status'}),list=el('div',{class:'contact-manager-list'}),pagination=el('div',{class:'actions contact-pagination'});
+  const records=contactEntries.filter(row=>row.current===true||row.managed);
+  function paint(reset=false) {
+    contactFilters={kind:kind.querySelector('select').value,membership:membership.querySelector('select').value,whitelist:whitelist.querySelector('select').value,query:search.querySelector('input').value,page:reset?0:contactFilters.page};
+    const f=contactFilters,q=f.query.trim().toLocaleLowerCase(),matches=records.filter(row=>(f.kind==='all'||row.kind===f.kind)&&(f.membership==='all'||(f.membership==='unknown'?row.current===null:row.current===(f.membership==='current')))&&(f.whitelist==='all'||row.whitelisted===(f.whitelist==='on'))&&contactText(row.key).includes(q));
+    const pages=Math.max(1,Math.ceil(matches.length/10));f.page=Math.min(f.page,pages-1);
+    summary.textContent='当前好友 '+records.filter(r=>r.kind==='private'&&r.current===true).length+' 位 · 所在群聊 '+records.filter(r=>r.kind==='group'&&r.current===true).length+' 个 · 白名单开启 '+records.filter(r=>r.whitelisted).length+' 个；匹配 '+matches.length+' 条';
+    const rows=matches.slice(f.page*10,f.page*10+10).map(row=>{
+      const relation=row.owner?'管理员本人':row.current===null?'关系暂未确认':row.current?(row.kind==='private'?'当前好友':'当前所在群'):(row.kind==='private'?'已非好友':'已不在群');
+      const permission=row.whitelisted?'白名单已开启':row.managed?'白名单已停用':'未加入白名单';
+      const values={key:row.key,revision:row.revision};
+      const actions=el('div',{class:'actions'},row.current===true&&!row.whitelisted?actionButton('加入白名单',row.managed?'scope.enabled':'scope.add',row.managed?{...values,enabled:true}:{kind:row.kind,id:row.id},'将允许「'+contactLabel(row.key)+'」使用机器人？'):null,
+        row.whitelisted&&!row.owner?actionButton('停用白名单','scope.enabled',{...values,enabled:false},'停用「'+contactLabel(row.key)+'」？记忆和记录会保留。'):null,
+        row.removable?actionButton('移除旧条目','scope.remove',{...values,confirmed:true},'移除「'+contactLabel(row.key)+'」的旧管理条目？将重新核实好友／群关系，移出白名单与管理列表，保留聊天记忆和历史记录。'):null);
+      return el('article',{class:'contact-manager-row','data-key':row.key},el('div',{},el('h3',{},contactLabel(row.key)),el('p',{class:'muted small'},row.kind==='private'&&row.nickname?'昵称：'+row.nickname:row.key),el('div',{class:'tags'},tag(relation,row.current===false?'warn':''),tag(permission,row.whitelisted?'good':''))),actions);
+    });
+    list.replaceChildren(...(rows.length?rows:[empty('没有匹配的联系人','调整筛选条件，或刷新好友和群聊。')]));
+    pagination.replaceChildren(el('button',{type:'button',...(f.page===0?{disabled:''}:{}),onclick:()=>{f.page--;paint();}},'上一页'),el('span',{class:'small'},'第 '+(f.page+1)+' / '+pages+' 页'),el('button',{type:'button',...(f.page+1>=pages?{disabled:''}:{}),onclick:()=>{f.page++;paint();}},'下一页'));
+  }
+  for(const control of [kind,membership,whitelist])control.querySelector('select').addEventListener('change',()=>paint(true));search.querySelector('input').addEventListener('input',()=>paint(true));paint();
+  const refresh=el('button',{type:'button',onclick:async event=>{const button=event.currentTarget;button.disabled=true;try{applyContactDirectory((await request('view?tab=contacts&fresh=1')).data);await loadPage();}catch(error){showError(error);}finally{button.disabled=false;}}},'刷新好友和群聊');
+  return el('section',{},el('p',{class:'muted small'},'查看当前QQ账号的好友、所在群聊及白名单。旧条目清理保留聊天记忆与历史记录。'),el('div',{class:'actions'},refresh),contactDirectoryMessage?el('p',{class:'muted small'},contactDirectoryMessage):null,el('div',{class:'scope-filter-row'},kind,membership,whitelist,search),summary,list,pagination);
+}
 function renderProfile(data) {
   applyPortrait(data.portrait);
   const globalValues = {revision: data.revision};
@@ -613,7 +667,7 @@ function renderProfile(data) {
       el('div', {class: 'service-group-rows'}, data.services.filter(service => ids.includes(service.id)).map(serviceRow)),
       index === 0 ? el('div', {class: 'service-settings'}, voiceSettings, visionSettings) : null))));
   const tabs = el('div', {class: 'profile-tabs', role: 'tablist', 'aria-label': '樱良档案分类'}), panes = [];
-  const choices = [['capabilities', '能力栏', capabilities], ['scopes', '会话开关', scopes], ['services', 'API 与模型', services]];
+  const choices = [['capabilities', '能力栏', capabilities], ['scopes', '会话开关', scopes], ['services', 'API 与模型', services], ['contacts', '好友与群聊', renderContactManager()]];
   const buttons = choices.map(([id, label, body], index) => {
     const pane = el('section', {class: 'profile-section', role: 'tabpanel', id: 'profile-section-' + id, 'aria-labelledby': 'profile-tab-' + id}, body);panes.push(pane);
     const button = el('button', {type: 'button', role: 'tab', id: 'profile-tab-' + id, 'aria-controls': pane.id, onclick: () => select(index), onkeydown: event => {
@@ -715,8 +769,7 @@ async function enter({preserve=!$('#app').hidden} = {}) {
   applyPortrait(overview.portrait);
   const directory = await request('view?tab=contacts').then(value=>value.data).catch(()=>({entries:[]}));
   if (!overview || !csrf) return;
-  contactDirectoryMessage = directory.message || (directory.available === false ? '联系人暂未读取，可输入号码或刷新。' : '');
-  contactEntries = directory.entries || [];contactLookup = new Map(contactEntries.map(row=>[row.key,row]));
+  applyContactDirectory(directory);
   const retainedScope=preserve?$('#scope').value:'all';
   $('#scope').replaceChildren(el('option', {value: 'all'}, '全部活动'), ...overview.scopes.map(k => el('option', {value: k}, scopeName(k))));
   if([...$('#scope').options].some(option=>option.value===retainedScope))$('#scope').value=retainedScope;

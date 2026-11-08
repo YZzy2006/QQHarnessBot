@@ -4462,6 +4462,11 @@ async function main() {
     };
 
     const workbenchAdministration = createWorkbenchSettings({
+      isContactAbsent: async key => {
+        const [kind,id] = key.split(':');
+        const rows = await (kind === 'group' ? loadGroupsForResolve(true) : loadFriendsForResolve(true));
+        return !rows.some(row => String(kind === 'group' ? row.group_id ?? row.groupId : row.user_id ?? row.uin ?? row.userId) === id);
+      },
       videoState: createBilibiliState({stateDir: STATE_DIR, atomicWrite: atomicWriteJson}),
       getVideoTargets: () => selectBilibiliTargets({ownerQQ: cfg.ownerQQ, privateIds: cfg.allow?.private ?? cfg.allow?.privates ?? [], groupIds: cfg.allow?.group ?? cfg.allow?.groups ?? [], conversations: socialV2.conversations, isAllowed: isSessionAllowedInCurrentMode}),
       getConfig: () => cfg, states: () => socialV2.conversations, getState: getSocialV2State, saveStates: () => saveSocialV2State(true),
@@ -4483,9 +4488,9 @@ async function main() {
         if(kind==='saved')return companion.change(p=>{const row=p.memories.find(r=>r.id===id);check(row);row.correction=text;row.updatedAt=Date.now();});
         throw Error('记录不可编辑');
       },
-      contacts: async () => {
-        const [friends, groups] = await Promise.allSettled([loadFriendsForResolve(), loadGroupsForResolve()]);
-        return {friends: friends.status === 'fulfilled' ? friends.value : [], groups: groups.status === 'fulfilled' ? groups.value : [], partial: friends.status !== 'fulfilled' || groups.status !== 'fulfilled', aliases: ownerTools.readOwner().aliases};
+      contacts: async (force = false) => {
+        const [friends, groups] = await Promise.allSettled([loadFriendsForResolve(force), loadGroupsForResolve(force)]);
+        return {friends: friends.status === 'fulfilled' ? friends.value : [], groups: groups.status === 'fulfilled' ? groups.value : [], partial: friends.status !== 'fulfilled' || groups.status !== 'fulfilled', friendsAvailable: friends.status === 'fulfilled', groupsAvailable: groups.status === 'fulfilled', aliases: ownerTools.readOwner().aliases};
       },
       root: ROOT, stateDir: STATE_DIR, store: workbenchStore, publicOrigin: cfg.workbench?.origin || '',
       redact: value => redactKnownTokensOnly(String(value)),
@@ -15154,6 +15159,7 @@ async function main() {
     const list = Array.isArray(res?.data)
       ? res.data
       : (Array.isArray(res?.data?.groups) ? res.data.groups : []);
+    if (!Array.isArray(res?.data) && !Array.isArray(res?.data?.groups) || list.some(row=>!row || !/^[1-9]\d{0,11}$/.test(String(row.group_id ?? row.groupId ?? '')))) throw Error('群聊列表暂未完整读取');
     targetCache.groups = { at: now, list };
     return list;
   }
@@ -15170,6 +15176,7 @@ async function main() {
     const list = Array.isArray(res?.data)
       ? res.data
       : (Array.isArray(res?.data?.friends) ? res.data.friends : []);
+    if (!Array.isArray(res?.data) && !Array.isArray(res?.data?.friends) || list.some(row=>!row || !/^[1-9]\d{0,11}$/.test(String(row.user_id ?? row.uin ?? row.userId ?? '')))) throw Error('好友列表暂未完整读取');
     targetCache.friends = { at: now, list };
     return list;
   }

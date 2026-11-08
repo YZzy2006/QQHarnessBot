@@ -77,3 +77,17 @@ test('真实HTTP两个页面共用视频开关和独立限额；无真人发送/
  const saved=JSON.parse(fs.readFileSync(path.join(f.h.temp,'state/bilibili/control.json'),'utf8'));assert.equal(saved.targets[key].dailyLimit,0);assert.equal(saved.targets[key].manualSelect,true);
  assert.equal((await f.action({action:'scope.video',key,revision:row.revision,enabled:false})).status,'succeeded');assert.equal(f.h.calls.sent.length,0);assert.equal(f.h.calls.prompts.length,0);
 });
+
+test('真实联系人接口区分当前/旧条目与白名单，清理重核关系但不删除会话记忆',async t=>{
+ const f=await setup(t),key='private:23456';f.h.cfg.allow.private.push(23456);f.h.getSocialV2State(key).activeTopics=[{text:'保留记忆'}];
+ let data=(await f.req('view?tab=contacts&fresh=1')).data.data,old=data.entries.find(r=>r.key===key);assert.equal(old.current,false);assert.equal(old.removable,true);assert.equal(old.whitelisted,true);
+ assert.equal((await f.action({action:'scope.remove',key,revision:old.revision,confirmed:true})).status,'succeeded');assert.equal((await f.profile()).scopes.some(r=>r.key===key),false);assert.equal(f.h.getSocialV2State(key).activeTopics[0].text,'保留记忆');assert.ok(f.h.cfg.deny.private.map(String).includes('23456'));
+ assert.equal(f.h.calls.sent.length,0);assert.equal(f.h.calls.prompts.length,0);
+});
+test('真实关系清理不使用缓存空名单；好友新恢复、读取失败或返回结构异常都拒绝',async t=>{
+ const f=await setup(t),key='private:45678';f.h.cfg.allow.private.push(45678);let old=(await f.req('view?tab=contacts')).data.data.entries.find(r=>r.key===key);assert.equal(old.current,false);
+ f.h.calls.qzoneFriends=[{user_id:45678,nickname:'已恢复好友'}];let row=(await f.profile()).scopes.find(r=>r.key===key);assert.equal((await f.action({action:'scope.remove',key,revision:row.revision,confirmed:true})).status,'failed');assert.ok((await f.profile()).scopes.find(r=>r.key===key));
+ const original=f.h.bot.request.bind(f.h.bot);f.h.bot.request=async(action,...args)=>action==='get_friend_list'?{status:'ok',retcode:0,data:{invalid:true}}:original(action,...args);
+ row=(await f.profile()).scopes.find(r=>r.key===key);const job=await f.action({action:'scope.remove',key,revision:row.revision,confirmed:true});assert.equal(job.status,'failed');assert.match(job.error,/完整读取/);assert.ok((await f.profile()).scopes.find(r=>r.key===key));
+ const partial=(await f.req('view?tab=contacts&fresh=1')).data.data.entries.find(r=>r.key===key);assert.equal(partial.current,null);assert.equal(partial.removable,false);
+});
