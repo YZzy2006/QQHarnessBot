@@ -171,8 +171,10 @@ await test('限额重置：清掉目标今天的发送计数，保留昨天', as
 });
 
 await test('指令帮助：默认发目录，按序号/全部分段', async () => {
-  assert.equal(await cmd('[指令]'), '');
-  assert.equal(calls.sent.length, 0);
+  const index = await cmd('[指令]');
+  assert.match(index, /【指令总览】/);
+  assert.ok(index.length < 1500, `目录过长 ${index.length}`);
+  assert.match(index, /\[指令 序号\]/);
 
   const section = await cmd('[指令 1]');
   assert.match(section, /【指令 1\//);

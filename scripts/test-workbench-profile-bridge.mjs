@@ -91,3 +91,11 @@ test('真实关系清理不使用缓存空名单；好友新恢复、读取失�
  row=(await f.profile()).scopes.find(r=>r.key===key);const job=await f.action({action:'scope.remove',key,revision:row.revision,confirmed:true});assert.equal(job.status,'failed');assert.match(job.error,/完整读取/);assert.ok((await f.profile()).scopes.find(r=>r.key===key));
  const partial=(await f.req('view?tab=contacts&fresh=1')).data.data.entries.find(r=>r.key===key);assert.equal(partial.current,null);assert.equal(partial.removable,false);
 });
+
+test('工作台管理指令保留，QQ入口关闭；系统报错鉴权可见且不发QQ',async t=>{
+ const f=await setup(t);f.h.cfg.workbench.origin='https://workbench.example.test';
+ await f.h.handleIncoming('private',123,{user_id:123,self_id:88888,message_id:901,message:[{type:'text',data:{text:'[状态]'}}]},f.h.cfg);assert.equal(f.h.calls.sent.length,0);
+ const job=await f.action({action:'command.run',commandId:'console.status',args:{},confirmed:true});assert.equal(job.status,'succeeded');assert.match(job.result.messages.map(row=>row.text).join('\n'),/机器人状态/);assert.equal(f.h.calls.sent.length,0);
+ await f.h.notifyOwnerWatchdog('fixture operational alert');const errors=(await f.req('view?tab=feedback&scope=all')).data.data;assert.ok(errors.entries.some(row=>row.source==='system'&&row.message.includes('fixture operational alert')));assert.equal(f.h.calls.sent.length,0);
+ assert.equal((await fetch(f.base+'/api/workbench/view?tab=feedback&scope=all')).status,401);
+});

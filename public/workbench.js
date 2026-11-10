@@ -7,7 +7,7 @@ const pages = {
   roles: ['人设', '人物设定', '查看原人物卡，也看清哪些内容正在生效。'],
   videos: ['视频', '刷过的视频', '观看资料、选片经过和分享结果，都放在这里。'],
   memory: ['记忆与安排', '记忆与安排', '会话记忆、明确回忆、待办和原有定时任务。'],
-  feedback: ['反馈 / 需求', '她的需求箱', '她提的小问题、新想法，还有等你回应的事。'],
+  feedback: ['反馈 / 需求', '她的需求箱', '她的反馈、需求和运行报错，集中放在这里。'],
   commands: ['网页指令', '网页指令', '常用 QQ 指令的网页入口。每次操作都有明确结果。'],
   server: ['服务器', '服务器小管家', '手动查看资源、预览安全清理；不给服务器额外添负担。'],
   runtime: ['运行状态', '运行状态', '连接、用量和错误，按记录如实显示。']
@@ -371,7 +371,7 @@ function renderFeedback(d) {
       }
     }, label));
     return el('article', {class: 'record feedback-record', 'data-id': r.id, 'data-state': state, 'data-kind': ['error', 'warning'].includes(r.level) ? r.level : 'info', 'data-date': r.time ? new Date(r.time).toLocaleDateString('sv-SE', {timeZone: 'Asia/Shanghai'}) : ''},
-      el('div', {class: 'record-meta'}, tag(level),
+      el('div', {class: 'record-meta'}, tag(r.source==='system'?'系统报错':level),
         el('span', {class: `tag status-${state} ${state === 'done' ? 'good' : ''}`}, names[state] || '待你看'), tag(scopeName(r.key)),
         el('time', {class: 'record-time', datetime: r.time}, time(r.time))),
       state === 'done' ? el('span', {class: 'completion-seal', 'aria-hidden': 'true'}, pixelIcon('blossom')) : null,

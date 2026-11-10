@@ -359,3 +359,5 @@ Nginx服务主仓库的`public/`（首页为`workbench.html`），API只反代�
 </div>
 
 > QQ显式测活／状态探测采用统一静默策略，管理员同样适用；网关内置回复需同步关闭。[配置与隔离验收](docs/QQ-INCOMING-POLICY.md)
+
+> 运行报错与卡住告警集中展示在工作台；已有工作台操作的系统管理入口从QQ侧静默迁移。[入口与报错说明](docs/OPERATIONAL-ERRORS.md)

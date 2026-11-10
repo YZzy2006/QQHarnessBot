@@ -158,6 +158,7 @@ import { createCompanion, COMPANION_HELP } from './companion.js';
 import { createUtilities, UTILITIES_HELP } from './utilities.js';
 import {createWorkbench, workbenchReply, workbenchContext} from './workbench-http.js';
 import {createWorkbenchStore} from './workbench-store.js';
+import {createWorkbenchErrorReporter} from './operational-errors.js';
 import {shouldIgnoreProbeMessage} from './incoming-probe-guard.js';
 import {createWorkbenchSettings, applyWorkbenchConfigPatch} from './workbench-settings.js';
 import {createBilibiliState} from './bilibili-state.js';
@@ -1554,11 +1555,12 @@ function localClock(atMs = Date.now()) {
 }
 
 const appendBridgeLog = createCappedLogger(BRIDGE_LOG, 2000);
+let workbenchErrorRecorder=null,recordingOperationalLog=false;
 
 function log(...args) {
-  let line;
+  let line,body='';
   try {
-    const body = args
+    body = args
       .map((a) => redactSensitiveText(typeof a === 'string' ? a : JSON.stringify(a)))
       .join(' ')
       .replace(/[\r\n]+/g, ' ');
@@ -1570,6 +1572,9 @@ function log(...args) {
   // 而 log() 是从 socket 事件回调里被调用的 —— 一旦抛出就会变成未捕获异常把进程带走。
   try { console.log(line); } catch {}
   appendBridgeLog(`${line}\n`);
+  if (!recordingOperationalLog && !/(?:消息已入未读|AI 已暂停，消息仅入库|AI 反馈|agent 回复|AI 内部输出)/.test(body) && /(?:出错|错误|失败|异常|告警|\berror\b|\btimeout\b)/i.test(body)) {
+    recordingOperationalLog=true;try { workbenchErrorRecorder?.(body); } catch {} finally { recordingOperationalLog=false; }
+  }
 }
 // 配置文件、旧状态和控制台输入都可能带来极大值或非有限数。
 // Node 会把溢出的 setTimeout 延迟改成 1ms；周期检查因此可能退化成忙循环。
@@ -1815,6 +1820,8 @@ async function main() {
   let ownerTools = null;
   const workbenchStore = createWorkbenchStore({stateDir: STATE_DIR, atomicWrite: atomicWriteJson});
   workbenchActivityRecorder=row=>workbenchStore.activity(row);
+  const operationalErrors=createWorkbenchErrorReporter({append:appendFeedbackEntry,ownerKey:()=>`private:${cfg.ownerQQ}`,redact:value=>redactSensitiveText(redactKnownTokensOnly(value))});
+  workbenchErrorRecorder=detail=>operationalErrors.record('runtime','',detail);
   let companion = null;
   let utilities = null;
   const privateReportGuard = createPrivateReportGuard({stateDir: STATE_DIR, atomicWrite: atomicWriteJson,onError:message=>log(message)});
@@ -10750,13 +10757,9 @@ async function main() {
     } else {
       log(`⏹️ 回合被中止 (${key})`);
     }
-    // 二代内部回合不自动转发；其他模式只发固定提示，原始 provider 错误留在管理端。
-    if (!notify || currentMode === 'reserved2' || shouldBlockSilentReply(key)) return false;
-    const now = Date.now();
-    if (now - (turnNoticeTimes.get(key) ?? 0) < 5 * 60 * 1000) return false;
-    turnNoticeTimes.set(key, now);
-    await sendToQQ(key, kind === 'error' ? '⚠️ 暂时无法处理消息，请稍后再试。' : '⏹️ 已停止', { ai: true });
-    return true;
+    if (kind === 'error') operationalErrors.record('agent',key,error);
+    // Operational failures are workbench-only in every QQ mode.
+    return false;
   }
 
   // 统一出站消息：先完整文本审计，再发送。返回是否真的发出。
@@ -12375,7 +12378,8 @@ async function main() {
         lines.push(`评了「${a.nickname}」：「${a.comment}」← ${snippet || '（无正文）'}`);
       }
     }
-    if (failures.length) lines.push(`失败 ${failures.length} 条（见 state/qzone-social.log）`);
+    if (failures.length) operationalErrors.record('qzone-social','',failures.map(row=>String(row.error||row.message||'互动失败')).join('\n'));
+    if (!actions.length) return;
     const text = lines.join('\n');
     await sendToQQ(ownerKey, text);
     if (!lastSendSucceeded(ownerKey)) {
@@ -13182,7 +13186,7 @@ async function main() {
       pruneQzoneSocialState(st, Date.now());
       saveQzoneSocialState();
       qzoneSocialLog(`check fetched=${scanInfo.fetched} scanned=${scanInfo.scanned} eligible=${eligible.length} actions=${actions.length} failures=${failures.length} proposals=${proposalCount}`);
-      if (actions.length) await notifyQzoneSocialActions(actions, failures);
+      if (actions.length || failures.length) await notifyQzoneSocialActions(actions, failures);
       return {
         ok: true,
         actions,
@@ -18137,15 +18141,7 @@ async function main() {
   }
 
   async function notifyOwnerTaskFailure(key, reminder, reason = '') {
-    const owner = Number(cfg.ownerQQ) || 0;
-    if (!owner) return;
-    const text = `[定时任务失败] ${key} 的「${String(reminder.text || '').slice(0, 80)}」没有执行：${String(reason || '未知原因').slice(0, 120)}`;
-    try {
-      await sendToQQ(`private:${owner}`, text);
-      log(`[schedule] 已通知管理员任务失败 ${key} ${reminder.id}`);
-    } catch (error) {
-      log(`[schedule] 通知管理员失败：${error?.message ?? error}`);
-    }
+    operationalErrors.record('scheduled-task',key,`任务 ${reminder.id || ''}「${String(reminder.text || '').slice(0,80)}」未执行：${String(reason || '未知原因').slice(0,500)}`);
   }
 
   async function sendReminderDirectV2(key, reminder) {
@@ -19872,13 +19868,7 @@ async function main() {
   const TURN_WATCHDOG_RELEASE_MS = 30 * 60 * 1000;
 
   async function notifyOwnerWatchdog(text) {
-    try {
-      if (bot && cfg.ownerQQ) {
-        await bot.sendPrivateMessage(Number(cfg.ownerQQ), text);
-      }
-    } catch (error) {
-      log('watchdog 告警发送失败:', error?.message ?? error);
-    }
+    operationalErrors.record('watchdog','',text,'warning');
   }
 
   /**
@@ -21448,7 +21438,7 @@ async function main() {
   // QQ 消息 → DSH prompt
   async function handleIncoming(kind, id, event, cfg) {
     // Drop before authorization logs, quote/media resolution, commands, storage and model wakes.
-    if (shouldIgnoreProbeMessage(event.message ?? event.raw_message)) return;
+    if (shouldIgnoreProbeMessage(event.message ?? event.raw_message, {workbenchAvailable:!!cfg.workbench?.origin})) return;
     const incomingText = Array.isArray(event.message) ? event.message.filter(s=>s.type==='text').map(s=>String(s.data?.text||'')).join('') : String(event.message||'');
     if(privateReportGuard.blocks('', String(event.message_id ?? ''), incomingText)) return;
     const key = convKey(kind, id);

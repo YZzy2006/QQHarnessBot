@@ -151,3 +151,7 @@ sudo apt-get install -y ffmpeg fonts-noto-cjk fontconfig python3
 ### QQ显式诊断入口
 
 部署时同时检查桥接入站策略及SnowLuma的`statusCommand.enabled=false`。见[入站策略与无真人消息验收](docs/QQ-INCOMING-POLICY.md)。不得通过真实QQ发送测活命令验收；正常天气、提醒和内部定时任务不改入口。
+
+### 工作台报错与QQ管理入口
+
+运行报错统一留在工作台，不再自动私聊管理员。配置工作台后，对应系统／运维／菜单管理在工作台操作；普通任务、天气和提醒保持原路径。见[部署与隔离验收](docs/OPERATIONAL-ERRORS.md)。不要用真实QQ消息验收。

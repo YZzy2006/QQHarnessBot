@@ -677,11 +677,7 @@ await test('总指令：[指令] 发目录，按序号取详细内容，且不�
   resetSocial();
   const key = `private:${OWNER}`;
   const before = bridge.getSocialV2State(key)?.recentMessages?.length || 0;
-  for (const text of ['[指令]', '[帮助]']) {
-    assert.equal(await cmd(text), '');
-    assert.equal(calls.sent.length, 0);
-  }
-  for (const text of ['[命令]', '帮助', '功能']) {
+  for (const text of ['[指令]', '[帮助]', '[命令]', '帮助', '功能']) {
     const reply = await cmd(text);
     assert.match(reply, /指令总览/);
     assert.match(reply, /好友动态查询/);
@@ -1305,10 +1301,12 @@ await test('管理员：撤回/查QQ/改备注', async () => {
   assert.match(help, /管理指令 · 用法/);
 });
 
-await test('QQ控制台状态探测静默', async () => {
+await test('控制台：[状态] 汇总', async () => {
   resetSocial();
-  assert.equal(await cmd('[状态]'), '');
-  assert.equal(calls.sent.length, 0);
+  const reply = await cmd('[状态]');
+  assert.match(reply, /【机器人状态】/);
+  assert.match(reply, /模式：reserved2/);
+  assert.match(reply, /待处理评论：/);
 });
 
 await test('控制台：[会话列表] / [群列表] / [群成员]', async () => {
