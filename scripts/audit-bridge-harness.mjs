@@ -1,3 +1,4 @@
+import * as incomingProbeGuard from '../src/incoming-probe-guard.js';
 import * as waitBudgetModule from '../src/wait-budget.js';
 import * as workbenchRecordsModule from '../src/workbench-records.js';
 import * as workbenchServerModule from '../src/workbench-server.js';
@@ -582,7 +583,7 @@ export async function bridgeHarness({ config = {}, savedState, files = {}, globa
     discoverDshLaunchToken: () => '', unwrap, createTurnCollector,
     discoverDshBaseUrl: async () => null,
     resolveInstalledPreset, synchronizePreset, renderPatch,
-    ...ownerCommandCatalogModule, ...workbenchPortraitModule, ...workbenchRecordsModule,...waitBudgetModule, ...workbenchServerModule, ...workbenchModule, ...bilibiliStateModule, ...workbenchSettingsModule, ...workbenchStoreModule, ...mediaNormalize, ...voiceExpression, ...bilibiliBridgeModule,...bilibiliCardModule, ...bilibiliProactiveModule, ...bilibiliTextModule, ...utilityContentModule,
+    ...incomingProbeGuard, ...ownerCommandCatalogModule, ...workbenchPortraitModule, ...workbenchRecordsModule,...waitBudgetModule, ...workbenchServerModule, ...workbenchModule, ...bilibiliStateModule, ...workbenchSettingsModule, ...workbenchStoreModule, ...mediaNormalize, ...voiceExpression, ...bilibiliBridgeModule,...bilibiliCardModule, ...bilibiliProactiveModule, ...bilibiliTextModule, ...utilityContentModule,
     isPublicBilibiliVideo: async () => false, // No anonymous network probes in isolated tests.
     ...markdown, ...sensitive, ...wait, ...safeFetch, ...forward, ...slang, ...sticker, ...qzone, ...groupChat, ...qzoneSocial, ...qzoneFeedQuery, ...qzoneProfileLike, ...friendRequests, ...friendViews, ...ownerCommandGuide, ...ownerConsole, ...ownerInspect, ...qqFaces, ...whitelistCommands, ...ownerExtra, ...ownerActions, ...ownerToolsModule, ...ownerSummaryModule, ...commandArgs, ...targetResolve, ...timeParse, ...proactivePolicy, ...proactiveTopics, ...qwenVl, ...groupViews, ...adminActions,
     ...modelPrices, ...tokenLedger, ...voiceLib, ...stateAcl,

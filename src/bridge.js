@@ -158,6 +158,7 @@ import { createCompanion, COMPANION_HELP } from './companion.js';
 import { createUtilities, UTILITIES_HELP } from './utilities.js';
 import {createWorkbench, workbenchReply, workbenchContext} from './workbench-http.js';
 import {createWorkbenchStore} from './workbench-store.js';
+import {shouldIgnoreProbeMessage} from './incoming-probe-guard.js';
 import {createWorkbenchSettings, applyWorkbenchConfigPatch} from './workbench-settings.js';
 import {createBilibiliState} from './bilibili-state.js';
 import {selectBilibiliTargets} from './bilibili-proactive.js';
@@ -21446,6 +21447,8 @@ async function main() {
 
   // QQ 消息 → DSH prompt
   async function handleIncoming(kind, id, event, cfg) {
+    // Drop before authorization logs, quote/media resolution, commands, storage and model wakes.
+    if (shouldIgnoreProbeMessage(event.message ?? event.raw_message)) return;
     const incomingText = Array.isArray(event.message) ? event.message.filter(s=>s.type==='text').map(s=>String(s.data?.text||'')).join('') : String(event.message||'');
     if(privateReportGuard.blocks('', String(event.message_id ?? ''), incomingText)) return;
     const key = convKey(kind, id);

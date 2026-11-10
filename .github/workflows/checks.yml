@@ -18,6 +18,7 @@ jobs:
       - name: 安装离线视频与中文卡片测试依赖
         run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-noto-cjk fontconfig python3
       - run: npm test
+      - run: npm run test:incoming
       - run: npm run test:faces
       - run: npm run test:video
       - run: npm run test:workbench

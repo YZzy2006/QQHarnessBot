@@ -68,12 +68,9 @@ await test('今日用量：只算当天 turn，不把 base 的累计算进来', 
   assert.match(reply, /private:123/);
 });
 
-await test('服务器：输出负载/内存/运行时长', async () => {
-  const reply = await cmd('[服务器]');
-  assert.match(reply, /【服务器】/);
-  assert.match(reply, /负载：/);
-  assert.match(reply, /内存：/);
-  assert.match(reply, /桥接运行时长：0天0小时2分/);
+await test('QQ服务器状态查询静默；网页内部管理保留原解析器', async () => {
+  assert.equal(await cmd('[服务器]'), '');
+  assert.equal(calls.sent.length, 0);
 });
 
 await test('群信息：调用 get_group_info 并格式化', async () => {

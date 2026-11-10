@@ -41,7 +41,8 @@ async function test(name, fn) {
 await test('管理员私聊便捷帮助和分页帮助注册', async () => {
   assert.match(await command('[便捷帮助]'), /任务顺延/);
   assert.match(await command('[指令 便捷]'), /十三、便捷工具/);
-  assert.match(await command('[指令]'), /13\./);
+  assert.equal(await command('[指令]'), '');
+  assert.equal(calls.sent.length, 0);
 });
 await test('别名复用到已有主动状态、群信息解析', async () => {
   assert.match(await command('[别名设置][小群][测试 群聊]'), /已绑定/);
@@ -59,11 +60,11 @@ await test('群内新指令有回应，便签内容只发管理员', async () =>
   assert.ok(privateMessages.some((item) => item.text.includes('私有待办内容')));
   assert.ok(privateMessages.every((item) => Number(item.id) === OWNER));
 });
-await test('群内已有状态/帮助也明确响应并私聊', async () => {
-  assert.match(await command('[状态]', { kind: 'group', id: GROUP }), /机器人状态/);
-  assert.ok(calls.sent.some((item) => item.kind === 'group' && item.text.includes('已私聊')));
-  assert.match(await command('[指令]', { kind: 'group', id: GROUP }), /指令/);
-  assert.ok(calls.sent.some((item) => item.kind === 'private'));
+await test('群内显式诊断静默，正常联系人管理保持', async () => {
+  assert.equal(await command('[状态]', { kind: 'group', id: GROUP }), '');
+  assert.equal(calls.sent.length, 0);
+  assert.equal(await command('[指令]', { kind: 'group', id: GROUP }), '');
+  assert.equal(calls.sent.length, 0);
   await command('[全部好友]', { kind: 'group', id: GROUP });
   assert.ok(calls.sent.some((item) => item.kind === 'group' && item.text.includes('已私聊')));
   assert.ok(calls.sent.some((item) => item.kind === 'private' && item.text.includes('测试联系人')));

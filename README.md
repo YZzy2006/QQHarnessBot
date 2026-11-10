@@ -357,3 +357,5 @@ Nginx服务主仓库的`public/`（首页为`workbench.html`），API只反代�
 [项目主页](https://github.com/YZzy2006/QQHarnessBot) · [问题反馈](https://github.com/YZzy2006/QQHarnessBot/issues) · [参与贡献](CONTRIBUTING.md)
 
 </div>
+
+> QQ显式测活／状态探测采用统一静默策略，管理员同样适用；网关内置回复需同步关闭。[配置与隔离验收](docs/QQ-INCOMING-POLICY.md)
